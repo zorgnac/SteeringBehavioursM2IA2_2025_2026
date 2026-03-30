@@ -17,6 +17,7 @@ class Vehicle {
   
   applyBehaviors(target) {
     let force = this.seek(target);
+    //let force = this.flee(target);
     this.applyForce(force);
   }
 

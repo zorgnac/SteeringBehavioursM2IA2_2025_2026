@@ -16,7 +16,8 @@ function setup() {
 
   // La cible est un vecteur avec une position aléatoire dans le canvas
   // dirigée par la souris ensuite dans draw()
-  target = createVector(random(width), random(height));
+  //target = createVector(random(width), random(height));
+  target = new Target(random(width), random(height));
 
   // Slider pour régler la vitesse max des véhicules
   // On crée le slider et on le positionne
@@ -50,6 +51,7 @@ function creerVehicles(nb) {
   }
 }
 
+
 // la fonction draw est appelée en boucle par p5.js, 60 fois par seconde par défaut
 // Le canvas est effacé automatiquement avant chaque appel à draw
 function draw() {
@@ -64,13 +66,17 @@ function draw() {
   // mouseX et mouseY sont des variables globales de p5.js, elles correspondent à la position de la souris
   // on les stocke dans un vecteur pour pouvoir les utiliser avec la méthode seek (un peu plus loin)
   // du vehicule
-  target.x = mouseX;
-  target.y = mouseY;
+  //target.x = mouseX;
+  //target.y = mouseY;
 
   // Dessine un cercle de rayon 32px à la position de la souris
   // la couleur de remplissage est rouge car on a appelé fill(255, 0, 0) plus haut
   // pas de contours car on a appelé noStroke() plus haut
-  circle(target.x, target.y, 32);
+  //circle(target.x, target.y, 32);
+  
+  target.update();
+  target.show()
+  target.edges();
 
   vehicles.forEach((vehicle) => {
     // je déplace et dessine le véhicule
@@ -90,10 +96,21 @@ function draw() {
     textAlign(LEFT, CENTER);
     text(vehicle.maxForce, 1010, 55);
 
-    vehicle.applyBehaviors(target);
+    vehicle.applyBehaviors(target.pos);
     vehicle.update();
 
     // On dessine le véhicule
     vehicle.show();
+
+    // Detection : si le vehicule touche la target, il reapparait
+    // ailleurs aléatoirement dans le canvas
+    // si distance < somme des rayons (rayon du véhicule + rayon de la cible)
+    if (vehicle.pos.dist(target.pos) < vehicle.r + 16) {
+      // le véhicule a touché la cible, on le fait réapparaître ailleurs aléatoirement dans le canvas
+      vehicle.pos = createVector(random(width), random(height));
+    }
+
+    // si le véhicule sort du canvas, on le fait réapparaître de l'autre côté
+    vehicle.edges();
   });
 }
