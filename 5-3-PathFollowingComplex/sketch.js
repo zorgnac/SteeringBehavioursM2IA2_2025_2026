@@ -55,6 +55,7 @@ function newPath() {
   // Simple suite de points partant de 30, 30 et allant vers 30, height - 30 etc.
   path = new Path();
   
+  /*
   let offset = 100;
   path.addPoint(offset, offset);
   path.addPoint(300, 180);
@@ -63,13 +64,13 @@ function newPath() {
   path.addPoint(width / 2, height - offset * 3);
   path.addPoint(200,550);
   path.addPoint(offset, height - offset);
-
+*/
   // genere un circuit qui ressemble à une piste de course
   // de voiture, sans angles trop durs
   // Je voudrais une trentaine de segments
   // Pas dangles trop aigus
   // et un peu d'aléatoire pour ne pas générer toujours le même circuit
-  /*
+  
   let offset = 100;
   let nbSegments = 30;
   let angleStep = (TWO_PI / nbSegments);
@@ -84,11 +85,11 @@ function newPath() {
     let y = height / 2 + sin(angle) * radius;
     path.addPoint(x, y);
   }
-  */
+  
 }
 
 function newVehicle(x, y) {
-  let maxspeed = random(2, 4);
+  let maxspeed = random(1, 3);
   let maxforce = 0.3;
   let v = new Vehicle(x, y, maxspeed, maxforce);
   vehicles.push(v);
@@ -101,7 +102,7 @@ function keyPressed() {
     Vehicle.debug = !debug;
   } else if(key == "s") {
     let v = newVehicle(mouseX, mouseY);
-    v.maxspeed = 8;
+    v.maxspeed = 10;
     v.couleur = "red"
   } else if (key == "w") {
     // on cree un véhicule wander
