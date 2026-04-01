@@ -175,7 +175,7 @@ function pldistance(p1, p2, x, y) {
         // On met la couche de neurone en entrée avec des valeurs entre 0 et 1
         // Rappel, on a i rayons (on est dans une boucle for sur les rayons
         // et on a une couche d'entrée avec autant de neuronnes que de rayons
-        inputs[i] = map(record, 0, 50, 1, 0);
+        inputs[i] = map(record, 0, SIGHT, 1, 0);
   
         // Si on a touché au moins un mur
         if (closest) {
