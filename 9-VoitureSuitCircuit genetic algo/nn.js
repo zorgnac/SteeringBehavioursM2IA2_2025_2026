@@ -24,6 +24,28 @@ class NeuralNetwork {
         this.model = this.createModel();
       }
     }
+
+    /** Compte le nombre de paramètres */
+    get params() {
+      let hidden = this.hidden_nodes
+      let count = 0
+      if (typeof hidden == typeof []) {
+        let current = hidden[0]
+        count = this.input_nodes*current + current
+        for (let i=1; i < hidden.length; i++)
+        {
+          count += current*hidden[i] + hidden[i]
+          current = hidden[i]
+        }
+        count += current*this.output_nodes + this.output_nodes
+      }
+      else {
+        let current = hidden
+        count = this.input_nodes*current + current
+        count += current*this.output_nodes + this.output_nodes
+      }
+      return count
+    }
   
     // On crée une copie du réseau de neurones, utilise peut être pour 
     // implémenter la mutation...
@@ -240,5 +262,82 @@ class NeuralNetwork {
       model.add(output);
 
       return model;
+    }
+
+    /** Dessine sur le contexte 2d d'un canvas */
+    draw(ctx, x, y) {
+      if (!ctx) ctx = canvas.getContext("2d");
+
+      if (x == null) x = 1
+      if (y == null) y = 1
+
+      let weights = this.toJSON().weights
+      let index
+      let o = [{ x: x, y: y }, { x: x, y: y }]
+      let inputs
+      let inter
+
+      if (this.last_predict) {
+        inputs = tf.tensor2d(this.last_predict.inputs)
+        inter = []
+        inter.push(inputs.dataSync())
+        // console.log(inputs.dataSync())
+      }
+
+      let drawWeights = (tensor, axis) => {
+        const indexOf = { x: 0, y: 1 }
+        let bias = tensor.shape.length == 1
+        let shape
+
+        if (!bias) { shape = drawTensor(ctx, tensor, o[1].x, o[1].y, axis == "y") }
+        else { shape = drawTensor(ctx, tensor, o[1].x, o[1].y, axis == "x") }
+
+        let i = indexOf[axis]
+        o[0][axis] += shape[i] + (bias ? 2 : 0)
+        o[1][axis] += shape[i] + (bias ? 2 : 0)
+      }
+
+      const other = { x: "y", y: "x" }
+
+      let drawLayer = (layer, axis) => {
+        const inside = layer ? layer.weights.length : 0
+        // throw 'inProgress'
+
+        if (inputs) {
+          let before = { x: o[1].x, y: o[1].y }
+          before[other[axis]] -= 1
+          let data = inputs.dataSync()
+          if (layer) data = data.slice(0,layer.kernel.shape[0])
+          drawVector(ctx, data, before.x, before.y, axis == "y", null, true)
+          if (layer) {
+            inputs = layer.apply(inputs)
+            inter.push(inputs.dataSync())
+          }
+        }
+        if (layer) {
+          for (let i = 0; i < inside; i++)
+            drawWeights(weights[index++], axis)
+        }
+
+        return inside ? other[axis] : axis
+      }
+
+      // return tf.tidy(() => 
+      {
+        // weights = this.model.getWeights()
+        index = 0
+        ctx.save()
+        {
+          const s = 10
+          ctx.scale(s, s)
+          let axis = "x"
+          for (let layer of this.model.layers) {
+            axis = drawLayer(layer, axis)
+          }
+        }
+        ctx.restore()
+        return inter
+      }
+    //)
     }
   }

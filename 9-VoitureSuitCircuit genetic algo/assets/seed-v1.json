@@ -1,0 +1,10 @@
+{
+  "total": 30,
+  "vehicles": [
+    {
+      "version": 1,
+      "span": 3,
+      "angle": 15
+    }
+  ]
+}

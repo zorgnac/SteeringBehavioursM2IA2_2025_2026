@@ -46,6 +46,7 @@ let UI = {
   stepButton : null,
 
   genCheck   : null, // pause sur changement de generation
+  purgeCheck : null,
   testCheck  : null, 
   /** @type CanvasRenderingContext2D */ board: null,
 
@@ -55,7 +56,8 @@ let UI = {
       "cycles": this.speedSlider.value(),
       "rate": CONFIG.Sketch.RATES[this.rateSlider.value()],
       "pause": UI.genCheck.checked(),
-      "step" : UI.stepButton.value()
+      "step" : UI.stepButton.value(),
+      "purge": UI.purgeCheck.checked(),
     }
   }
 };
@@ -93,7 +95,7 @@ UI.setup = function ()
 
   UI.speedSlider = createSliderDiv(control,
     "Amount of physical steps in a clock tick",
-    'Speed', [0, 12, 0], UI.onSpeedChange);
+    'Speed', [0, 12, 1], UI.onSpeedChange);
   UI.rateSlider = createSliderDiv(control,
     "Number of clock ticks in a user second",
     'Rate', [0, def.RATES.length - 1, def.RATES.length-1], UI.onRateChange);
@@ -104,7 +106,7 @@ UI.setup = function ()
   column.addClass('Column Left');
   column.parent(control);
   UI.genCheck = createCheckDiv(column,
-    "Pause on generation",
+    "Pause before starting next race",
     "Pause", "gencheck");
 
   column = createDiv();
@@ -114,6 +116,9 @@ UI.setup = function ()
   UI.testCheck = createCheckDiv(column,
     `Loop on killer tracks`,
     "Test", "testCheck");
+  UI.purgeCheck = createCheckDiv(column,
+    "Put all vehicles on track. Once done keep the TOTAL best",
+    'Purge', "purgeCheck")
 
   div = createDiv()
   div.addClass('Actions');
@@ -141,8 +146,28 @@ UI.setup = function ()
   black.attribute("height", 400)
   UI.board = black.elt.getContext("2d")
 
+  UI.purgeCheck .checked(def.CHECK_PURGE)
   UI.testCheck .checked(def.LOAD_KILLERS ? def.CHECK_TEST : false )
   UI.onRateChange()
+
+  canvas.elt.addEventListener("click", (e) => {
+    let vehicle = currentGen.vehicleAt(canvas.elt, e)
+    selectVOI(vehicle)
+    brainInfo(vehicle ? vehicle : 'none')
+  })
+
+  canvas.elt.addEventListener("mousemove", (e) => {
+    let vehicle = currentGen.vehicleAt(canvas.elt, e)
+    if (vehicle) {
+      canvas.attribute("title", `${vehicle}`)
+      canvas.addClass("Interactive")
+    }
+    else {
+      canvas.removeAttribute("title")
+      canvas.removeClass("Interactive")
+    }
+  })
+
 }
 
 UI.genStats = function (stats)
@@ -154,18 +179,19 @@ UI.genStats = function (stats)
     UI.message(message);
   }
 }
-UI.message = function(message, log)
+UI.message = function(message, log, force)
 {
   let holder = UI.speedSlider
   if (log) console.log(message)
-  if (holder.value() == 0)
+  if (holder.value() == 0 && !force)
     holder.hold = message;
   else
     UI.messageDiv.html(message);
+  UI.lastMessage = message
 }
 UI.pause = function(message) {
   let holder = UI.speedSlider
-  UI.message(`Pause: ${message}`)
+  UI.message(message)
   holder.value(0)
 }
 UI.onSpeedChange = function()
@@ -225,9 +251,10 @@ function setup() {
   killerTest.init(currentGen.lists.running)
 
   raceInfo()
+  UI.pause(UI.lastMessage)
   let comment = createDiv()
   comment.class("Version")
-  comment.html("Symétrie")
+  comment.html("VOI")
 }
 
 function onTestDone(message) {
@@ -238,6 +265,40 @@ function onTestDone(message) {
   test.checked(false);
   test.value('on')
 }
+
+/** @type NeuralNetwork */ let brain
+// let pace
+function brainInfo(selection)
+{
+  let ctx = UI.board
+
+  if (!selection) selection = 0
+
+  if (selection instanceof Vehicle)
+    car = selection;
+  else
+    car = currentGen.lists.running[selection]
+
+  // pace = currentGen.lists.running[1]
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+  if (!car) {
+    console.log('no car')
+    return
+  }
+  // console.log(car.id)
+  brain = car.brain
+  let r = brain.draw(ctx,1,2)
+  {
+    ctx.save()
+    // ctx.font = "48px serif"
+    ctx.fillStyle = "white"
+    ctx.fillText(car.id + " " + car.brain.activation, 10, 10)
+    ctx.strokeText(car.id, 0, 0)
+    ctx.restore()
+  }
+  return r
+}
+
 function onTestKillerClick(name)
 {
   if (!UI.speedSlider.value()) {
@@ -263,6 +324,34 @@ function raceInfo() {
     }
   }
 }
+
+/** Dernière voiture manipulée par l'utilisateur */ let car
+function selectVOI(vehicle) {
+  if (vehicle) {
+    // console.log(vehicle.id)
+    car = vehicle
+    if (!Vehicle.OF_INTEREST)
+      Vehicle.OF_INTEREST = Vehicle.config.OF_INTEREST
+    Vehicle.config.OF_INTEREST = vehicle
+    UI.message(`VOI: ${vehicle}`, true, true)
+  }
+  else {
+    if (Vehicle.OF_INTEREST) {
+      Vehicle.config.OF_INTEREST = Vehicle.OF_INTEREST
+      UI.message(`VOI: ${Vehicle.OF_INTEREST}`, true, true)
+    }
+    delete Vehicle.OF_INTEREST
+  }
+}
+function onRaceClick(e) {
+  let serial = int(e.srcElement.parentElement.getAttribute("serial"))
+  let vehicle = 'none'
+  if (serial != null) vehicle = currentGen.find(serial)
+//  brainInfo(vehicle)
+  selectVOI(vehicle)
+}
+
+
 
 // Démarre une nouvelle course sur un nouveau circuit.
 // 
@@ -366,10 +455,9 @@ function drawInfo(cycles, vehicle)
     text(300, 25, "Generation is not ready");
 
   else {
-    const {test} = UI.status
+    const {test, rate, cycles} = UI.status
 
     let def = CONFIG.Sketch
-    const rate = def.RATES[UI.rateSlider.value()]
     let stats = currentGen.stats
     let track  = currentTrack.id;
     let uuid   = currentTrack.uuid;
@@ -423,6 +511,10 @@ function drawInfo(cycles, vehicle)
     }
     else
       text(`${currentGen.countAlive}: ${str}`            , x, y); 
+
+    if (!cycles) {
+      text("Pause - use Speed slider to animate", 400, 400)
+    }
   }
 }
 
@@ -484,7 +576,7 @@ function draw() {
     // On dessine le circuit
     currentTrack.show()
     // On dessine les voitures
-    currentGen.show(vehicle)
+    currentGen.show(vehicle, Vehicle.config.OF_INTEREST)
 
     // On montre le tableau de course de temps à autre
     if (vehicle && vehicle.event) { 
@@ -545,24 +637,41 @@ function declareKiller()
   }
 }
 
+function mayPurge()
+{
+  let finished = currentGen.lists.finished
+  let stored = currentGen.countStored
+
+  {
+    if (stored == 0 && finished.length > currentGen.total) {
+      let purge = finished.splice(currentGen.total)
+      Generation.serial++
+      currentGen.serial++
+      console.log(`purging ${purge.length} vehicles`)
+      console.log(purge)
+      UI.purgeCheck.checked(false)
+    }
+  }
+
+  return stored
+}
 function nextRace()
 {
-  let {cycles, pause} = UI.status
+  let {cycles, pause, purge, test} = UI.status
   if (!cycles)
     return
 
   {
-    let limit
     let def = Generation.config
-    let stored = currentGen.countStored;
-    const {FINISHED} = Generation.config
+    
+    if (purge) mayPurge();
 
     currentGen.classifyFinished();
     if (!currentTrack.kills) {
       currentTrack.kills = currentGen.countDeadOld
     }
 
-    stored = currentGen.countStored;
+    let stored = currentGen.countStored;
 
     // On rapporte à l'utilisateur si le circuit est tueur :
     // un ancêtre ou un qualifié est mort
@@ -572,14 +681,14 @@ function nextRace()
  
     // On ne change de circuit que si le nombre minimal de voitures
     // a terminé
-    if (stored >= currentGen.total || !FINISHED)     {
+    if (stored >= currentGen.total || !def.FINISHED)     {
       nextTrack(true);
     }
 
     // On prépare la nouvelle course, soit sur le même
     // circuit avec une nouvelle génération, soit sur le
     // nouveau circuit avec la génération en cours
-    currentGen = currentGen.next(currentTrack);
+    currentGen = currentGen.next(currentTrack, purge && !test);
 
     let stats = currentGen.prepare(currentTrack);
     UI.genStats(stats);

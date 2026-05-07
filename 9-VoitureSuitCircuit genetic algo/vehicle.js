@@ -1,3 +1,10 @@
+/** Vitesse de reference 
+ * 
+ * Doit rester la même indépendamment des évolutions
+ * du code
+ * */ 
+const REF_SPEED = 2.5
+
 function pldistance(p1, p2, x, y) {
     const num = abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x);
     const den = p5.Vector.dist(p1, p2);
@@ -121,6 +128,9 @@ class Vehicle {
     }        ,
     // Constantes de calcul de fitness
     /** Poids de la vitesse au tour */ WEIGHT_SPEED    : 1           ,
+
+    /** Nom de la voiture d'intérêt         */ OF_INTEREST  : 'voi',
+    /** Voir {@link Generation.show}        */ FOCUS_VOI    : true
 }
 
   static serial = 0; // Numéro de série du dernier bolide
@@ -353,15 +363,14 @@ class Vehicle {
   */
   toString(td) {
     let str
-    const ref = 2.5
-    let unit = this.speedUnit / ref
+    let unit = this.speedUnit / REF_SPEED
 
     let vm = round(this.stats.vel.mean *100*unit, 0)
     let vs = round(this.stats.vel.sigma*100*unit, 0)
     let vl = round(this.stats.vel.max  *100*unit, 0)
 
     {
-      let vel = this.vel ? round(this.vel.mag()/ref*100,0) : 0
+      let vel = this.vel ? round(this.vel.mag()/REF_SPEED*100,0) : 0
       let score = this.fitness ? round(this.fitness*100,0) : this.points;
       str = `${this.id} [${score}]`
 
@@ -379,7 +388,7 @@ class Vehicle {
 
   /** Résumé sous forme clé/valeur */
   get cells() {
-    let unit = this.speedUnit / 2.5
+    let unit = this.speedUnit / REF_SPEED
 
     let vm = round(this.stats.vel.mean * 100 * unit, 0)
     let vs = round(this.stats.vel.sigma * 100 * unit, 0)
@@ -872,10 +881,10 @@ class Vehicle {
     return inputs
   }
 
-  /** Unité de vitesse. Si this.limit.speed, c'est celle-là, sinon, c'est MAX_SPEED */
+  /** Unité de vitesse. Si this.limit.speed, c'est celle-là, sinon, c'est REF_SPEED */
   get speedUnit() {
     let limit = this.limit.speed
-    if (!limit) limit = Vehicle.config.MAX_SPEED
+    if (!limit) limit = REF_SPEED
     return limit
   }
 

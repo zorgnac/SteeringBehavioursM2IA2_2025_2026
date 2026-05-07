@@ -717,7 +717,17 @@ class Generation {
     return count
   }
 
-  next(track) {
+  /** Choisit la génération pour le prochain circuit
+   * 
+   * La génération choisie contient les voitures
+   * choisies pour la course dans sa liste 'running' 
+   * 
+   * - on sort les voitures du garage
+   * - on complète à Generation.total s'il manque des voitures
+   * - à moins que `runAll` soit vrai, on sélectionne 
+   *   Generation.total et on remet le surplus au garage
+   */
+  next(track, runAll) {
     let def = this.constructor.config
     let r = this;
     let lists  = this.lists
@@ -736,10 +746,13 @@ class Generation {
     {
       if (stored.length >= this.total)
       {
-        let total = this.total
-        let olds = stored.length
+        if (runAll) {
+          lists.running = lists.stored
+          lists.stored = []
+        }
+        else
+          lists.running = stored.splice(0, this.total + elders)
 
-        lists.running = stored.splice(0, this.total + elders)
         lists.dead    = []
 
         break running

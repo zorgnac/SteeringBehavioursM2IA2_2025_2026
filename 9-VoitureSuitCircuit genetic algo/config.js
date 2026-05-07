@@ -54,6 +54,7 @@ const CONFIG = {
 
         // État initial de l'interface utilisateur
         /** Case Test cochée     @type boolean  */ CHECK_TEST  : null,
+        /** Case Purge cochée    @type boolean  */ CHECK_PURGE : null,
         /** Étages d'ascenseur   @type {int[]}  */ RATES       : null,
     }, 
 
@@ -73,20 +74,23 @@ const CONFIG = {
     let def = CONFIG.Sketch
 
     def.LOAD_GEN = [
-        // 'gen4',
-        // 'gen-simple-0'
+        'car-simple-1',
+        // 'gen-h9x6c1-2',
+        // 'gen-sym-dir-1',
+        // 'seed-v1'
     ]
 
     def.LOAD_TRACKS = [
         // 'initialTracks'
     ]
     def.LOAD_KILLERS = [
+        'trk-simple-1',
         // 'killerTracks',
-        // 'initialTracks'
-        // 'killerTracks/initial-3'
+        //  'initialTracks',
     ]
 
-    def.CHECK_TEST = true; false;
+    def.CHECK_TEST = true
+    // def.CHECK_PURGE = true
     def.RATES = [0, 0.1, 0.5, 1, 2, 4, 8, 12, 16, 24];
 }
 

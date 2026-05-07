@@ -33,7 +33,7 @@ body {
 .Hidden {
     display: none;
 }
-.Race {
+.Interactive, .Race {
     cursor: pointer;
 }
 div.Test {
