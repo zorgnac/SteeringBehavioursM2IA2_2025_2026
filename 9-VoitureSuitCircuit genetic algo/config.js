@@ -54,11 +54,36 @@ let CONFIG = {
         /** Monde de circuits prédéfinis    @type {string|string[]} */ LOAD_TRACKS : null,
         /** Monde de circuits tueurs        @type {string|string[]} */ LOAD_KILLERS: null,
 
+        /** Voiture en apprentissage                    
+         * 
+         * Sous la forme : 'GEN:TRAINEE:TRAINER'
+         * avec :
+         * - GEN le fichier de génération qui contient l'élève
+         * - TRAINEE le nom de l'élève (facultatif)
+         * - TRAINER le nom de du maître dans la génération LOAD_GEN (facultatif)
+         * 
+         * Les deux séparateurs (:) doivent être présents si l'un ou l'autre
+         * de TRAINEE ou TRAINER est donné
+         *                       @type {string} */ TRAINING    : null,
+
         // État initial de l'interface utilisateur
         /** Case Test cochée     @type boolean  */ CHECK_TEST  : null,
         /** Case Killer cochée   @type boolean  */ CHECK_KILLER: null,
         /** Case Purge cochée    @type boolean  */ CHECK_PURGE : null,
+        /** Case Pause cochée    @type boolean  */ CHECK_PAUSE : null,
         /** Étages d'ascenseur   @type {int[]}  */ RATES       : null,
+        /** Valeur de speed      @type int      */ SPEED       : 2,
+
+        /** Mode de définition de circuits initiaux tueurs  
+         * 
+         * Valeur : [ TRICKY, DT ]
+         * 
+         * Si non-null, les nouveaux circuits sont de plus
+         * en plus tueurs (depuis TRICKY et par incrément DT) jusqu'à atteindre le niveau
+         * défini par {@link Track.config.TRICKY}. 
+         * 
+         * Le niveau de difficulté d'un
+         * circuit est {@link Track.tricky}    */ ALWAYS_KILLER:null,
     }, 
 
     /** Configure selon diverses sources de configuration 
@@ -79,37 +104,42 @@ CONFIG = new Asset(CONFIG)
     let def = CONFIG.Sketch
 
     // def.LOAD_CONFIG = 'config/miage-0'
-    def.LOAD_CONFIG = 'config/broom'
+    def.LOAD_CONFIG = 'config/training'
 
     def.LOAD_GEN = [
         'car-simple-1',
         // 'gen-h9x6c1-2',
+        // 'gen-h9x6c1-f05',
         // 'gen-sym-dir-1',
         // 'seed-v1'
         // 'seed-c',
-        // 'gen173'
+        // 'seed-f1'
+        // 'gen64'
     ]
 
     def.LOAD_TRACKS = [
         // 'initialTracks'
     ]
     def.LOAD_KILLERS = [
-        'trk-simple-1',
+        // 'trk-simple-1',
         // 'killerTracks/standard',
+        // 'killerTracks',
         //  'initialTracks',
     ]
 
+    // def.TRAINING = 'seed-c::h9x6c1-f05'
+    // def.ALWAYS_KILLER = [ 1.5, 0.5 ]
+
     def.CHECK_TEST = true
     // def.CHECK_PURGE = true
+    // def.CHECK_PAUSE = true
     def.RATES = [0, 1, 2, 5, 10, 15, 20, 30];
 }
 
 // ----------------------------------------------------
 CONFIG.Vehicle = function () {
-    // Les valeurs commentée par [*] ne sont pas surchargées par
-    // les instances
     let def = Vehicle.config
-    // def = CONFIG.Vehicle;
+
     def.LIFESPAN = 150
     
     return CONFIG.Vehicle
@@ -131,8 +161,10 @@ CONFIG.Generation = function() {
     let def = Generation.config
 
     def.TOTAL = 30; 1;
-    def.FINISHED = true;
     def.BROOM = 'broom' // On tue systématiquement les voitures plus lentes que celle-ci
+
+    def.AUTO_TEST = 10; 
+    def.FINISHED = true;
 
     return CONFIG.Generation
 }

@@ -131,6 +131,58 @@ class NeuralNetwork {
       });
     }
 
+    /** @typedef TrainingInfo
+     * @prop {number} loss Valeur de la fonction de coût
+    */
+
+    /** Entraînement sur données */
+    train(inputs, outputs, onTrain) {
+      let model = this.model
+      if (!this.count) {
+        model.compile({
+          optimizer: "adam",
+          loss: 'meanSquaredError',
+        }) 
+        this.count = 1
+      }
+      let onDone = (info) => {
+        console.log(`[${Generation.time()}] #${this.count}: loss`, round(info.history.loss[epochs - 1]*1000, 3))
+        // nn.draw(setup.board)
+        this.count++
+        if (onTrain) onTrain(this)
+        return info.history.loss[epochs - 1]
+      }
+      let onBatchEnd = (batch, logs) => {
+        let info = this.trainInfo
+        // console.log(`[${Generation.time()}] batch#${batch}: `, logs)
+        if (batch == 0) info.epoch++
+        
+        info.batch = batch
+        info.loss = logs.loss
+        info.duration = Generation.duration(info.start, new Date)
+      }
+      const size = 32
+      const epochs = int(inputs.length / size)
+
+      /** @type TrainingInfo */ this.trainInfo =  {
+        start: new Date,
+        batch: 0,
+        epoch: 0,
+        epochs: epochs,
+        loss: Infinity,
+        duration: 0
+      }
+      const config = {
+        shuffle: true,
+        epochs: epochs,
+        batchSize: size,
+        callbacks: {onBatchEnd}
+      }
+
+      return model.fit(tf.tensor(inputs), tf.tensor(outputs), config).
+        then(onDone)
+    }
+
     /* Persistance du cerveau */
 
     toJSON() {

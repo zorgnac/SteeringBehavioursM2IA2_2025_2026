@@ -10,7 +10,6 @@ class Track {
   static config = {
     /** Nombre de tours à parcourir                   */ LAPS  : 3,
     /** Difficulté                                    */ TRICKY: 3,
-    /** Incrément difficulté à chaque nouveau circuit */ DT : 0
   }
 
   /** @returns {String} Identifiant unique */
@@ -51,8 +50,6 @@ class Track {
     this.tricky = def.TRICKY;
     this.date   = new Date()
     
-    def.TRICKY += def.DT
-
     this.checkpoints = [];
     this.uuid = Track.uuid()
 

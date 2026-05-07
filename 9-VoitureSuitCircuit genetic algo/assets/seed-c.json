@@ -1,0 +1,46 @@
+{
+  "total": 30,
+  
+  "vehicles": [
+        {
+  "name": "h9x6c1f1",
+  "version": 6,
+  "ahead": 0,
+  "channels": {},
+  "span": 1,
+  "angle": 15,
+  "old": 0,
+  "beta": 0,
+      "hidden": [ 9, 6 ],
+  "uuid": "seed-h9x6c1f1",
+  "dead": false,
+  "limit": {
+    "speed": 0,
+    "force": 0.1,
+    "sight": 300,
+    "safe": -0.01
+  },
+  "curves": {
+    "temperature": {
+          "0": 1,
+          "10": 0.75,
+          "100": 0.1,
+          "1000": 0.01
+    },
+    "rate": {
+          "0": 0.4,
+          "100": 0.05,
+          "1000": 0.01
+    }
+  },
+  "options": {
+    "ahead-distance": false,
+    "activation": "relu",
+    "behind": false,
+    "direct": false,
+    "side-direct": true
+  }
+    }
+
+  ]
+}

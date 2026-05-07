@@ -1,62 +1,69 @@
 
-// Fonctions pour le calcul génétique
+
 
 // const p5 = require("../0-Librairies/p5.min");
 
 /**
   Une instance de Generation est une liste de voitures ({@link Vehicle})
   disponibles pour une course sur un circuit ({@link Track})
-
-  On produit la première génération de manière spontanée comme
-  TOTAL instances de Vehicle, en ne donnant aucun argument au
-  constructeur. TOTAL est essentiellement une constante, précisée
-  dans {@link Generation.config}. TOTAL est copié dans la propriété 
-  {@link Generation.total} de l'instance.
-
-  Les générations suivantes s'obtiennent soit par héritage,
-  soit par dé-sérialisation, selon l'argument que l'on passe au
-  constructeur.
-
-  La méthode {@link Generation.prepare} met en place les voitures sur
-  la ligne de départ d'un circuit ; {@link Generation.run} provoque 
-  l'avancée de la course dans le temps.
-
-  Selon l'état de course, la liste est segmentée en quatre
-  dans {@link Generation.lists} :
-  - 'finished' contient les voitures qui ont terminé
-    la course
-  - 'running' contient les voitures encore en course
-  - 'dead' celles qui se sont craché, qui ont abandonné, ou
-    qui ont été sauvagement assassinées
-  - 'stored' celles qui sont encore viables, mais en surnombre
-    pour participer à la course ; elle restent au garage
-
-  Le voitures elle-mêmes ne touchent pas aux listes, mais se
-  déclarent 'dead' ou 'finished' selon qu'elles rencontrent l'une
-  ou l'autre des situations. Generation range dans les listes avec
-  {@link Generation.classifyRunning}.
-
-  Une fois la course terminée, {@link Generation.classifyFinished} met à jour
-  la température des voitures et vide 'finished' pour remplir
-  le garage.
-
-  Les modalités du passage à la génération suivante sont contrôlées
-  par la méthode {@link Generation.next}. On prend plusieurs choses en compte,
-  en particulier si on se prépare pour un circuit que 
-  certaines voitures ont déjà rencontré. Voir les détails
-  dans {@link Generation.next}.
-
-  La génération elle-même hérite de certaines caractéristiques
-  de son parent, mais autorise les mutations. Generation choisit
-  les voitures mères parmi la génération parente, mais laisse
-  à Vehicle le soin de s'occuper de la mutation elle-même. Il
-  y a deux méthodes importantes pour la tâche :
-  - {@link Generation.calculateFitnessForAllCars} établit les probabilités de
-    sélection d'une voiture mère
-  - {@link Generation.inherit} sélectionne les mères et leur demande d'enfanter les 
-    nouvelles voitures
  */
 class Generation {
+  /**
+    On produit la première génération de manière spontanée comme
+    TOTAL instances de Vehicle, en ne donnant aucun argument au
+    constructeur. TOTAL est essentiellement une constante, précisée
+    dans {@link config}. TOTAL est copié dans la propriété 
+    {@link total} de l'instance.
+  
+    Les générations suivantes s'obtiennent soit par héritage,
+    soit par dé-sérialisation, selon l'argument que l'on passe au
+    constructeur.
+  
+    La méthode {@link prepare} met en place les voitures sur
+    la ligne de départ d'un circuit ; {@link run} provoque 
+    l'avancée de la course dans le temps.
+  
+    Selon l'état de course, la liste est segmentée en quatre
+    dans {@link lists} :
+    - 'finished' contient les voitures qui ont terminé
+      la course
+    - 'running' contient les voitures encore en course
+    - 'dead' celles qui se sont crachées, qui ont abandonné, ou
+      qui ont été sauvagement assassinées
+    - 'stored' celles qui sont encore viables, mais en surnombre
+      pour participer à la course (ou qui ont déjà parcouru le circuit); 
+      elles restent au garage
+  
+    Le voitures elle-mêmes ne touchent pas aux listes, mais se
+    déclarent 'dead' ou 'finished' selon qu'elles rencontrent l'une
+    ou l'autre des situations. Generation range dans les listes avec
+    {@link classifyRunning}.
+  
+    Une fois la course terminée, {@link classifyFinished} met à jour
+    la température des voitures et vide 'finished' pour remplir
+    le garage.
+  
+    Les modalités du passage à la génération suivante sont contrôlées
+    par la méthode {@link next}. On prend plusieurs choses en compte,
+    en particulier si on se prépare pour un circuit que 
+    certaines voitures ont déjà rencontré. Voir les détails
+    dans {@link next}.
+  
+    La génération hérite de certaines caractéristiques
+    de son parent, mais autorise les mutations. Generation choisit
+    les voitures mères parmi la génération parente, mais laisse
+    à Vehicle le soin de s'occuper de la mutation elle-même. Il
+    y a deux méthodes importantes pour la tâche :
+    - {@link calculateFitnessForAllCars} établit les probabilités de
+      sélection d'une voiture mère
+    - {@link inherit} sélectionne les mères et leur demande d'enfanter les 
+      nouvelles voitures
+
+    Si défini, {@link train} contrôle un mode voiture-école. Voir
+    {@link nextTraining}
+  */
+  static description;
+
   /** Numéro de série */ static serial = 0 ;
   /** Configuration  */
   static config = {
@@ -105,7 +112,14 @@ class Generation {
     FINISHED: true
   }
 
-  /** Instance de {@link Generation.config.BROOM} @type Vehicle */  static broom;
+  /** Voiture-balai {@link Generation.config.BROOM} @type Vehicle */  static broom;
+  /** 
+   * @typedef {object} Training 
+   * @property {Vehicle} trainer
+   * @property {Vehicle} trainee
+   * @property {Vehicle[]} demo Voitures de démonstration des apprentissages
+   */
+  /** @type {Training} */ static train;
 
   /**
    * Si donné, CONFIG est soit une génération, qui sera le parent, soit
@@ -279,7 +293,7 @@ class Generation {
     {
       for (let vehicle of list) {
         update(vehicle)
-        if (vehicle.prepare(track, vehicle.alwaysRun)) {
+        if (vehicle.prepare(track)) {
           running.push(vehicle)
         }
         else {
@@ -393,6 +407,9 @@ class Generation {
       keys = ['stored', 'finished' ]// Object.keys(gen.lists)
       keys.push('passed')
     }
+    if (keys == 'demo') {
+      keys = ['demo']
+    }
     if (!keys) keys = Object.keys(gen.lists);
 
     for (let key of keys)
@@ -416,6 +433,9 @@ class Generation {
       }
 
       vehicles = passed
+    }
+    if (keys.includes('demo')) {
+      vehicles = Generation.train.demo
     }
     vehicles.sort(byUUID)
     // json.type = "Generation";
@@ -683,6 +703,7 @@ class Generation {
   
   static STATUS_RUNNING  = 1;
   static STATUS_FINISHED = 10;
+  static STATUS_TRAINING = 20;
   
   classifyFinished(elders)
   {
@@ -825,7 +846,10 @@ class Generation {
     elders = this.sortStoreByPassed(track)
 
     running:
-    {
+    if (Generation.train) {
+      this.nextTraining()
+    }
+    else {
       let total = this.total
       let frozen = Generation.config.FROZEN
       if (frozen) {
@@ -851,13 +875,74 @@ class Generation {
       r = new Generation(this, true);
     } // bloc 'running'
 
-    r.status = Generation.STATUS_RUNNING;
-    if (!lists.running.length)
-      throw 'generation is empty'
+    if (r.status != Generation.STATUS_TRAINING) {
+      r.status = Generation.STATUS_RUNNING;
+      if (!lists.running.length)
+        throw 'generation is empty'
+    }
 
     return r;
   }
-  
+
+  /** Lance l'apprentissage supervisé par une voiture maître
+   * 
+   * La fonction est appelée automatiquement par {@link next}
+   * si un entraînement est préparé. `sketch` doit veiller à ne pas appeler
+   * `next` quand {@link status} indique {@link STATUS_TRAINING}
+   * 
+   * Notes :
+   * - une randomisation heureuse du cerveau élève 
+   *   conduit typiquement à {@link train.trainee.brain.trainInfo.loss}*1000 au dessous de 1
+   *   dès le premier entraînement (quand le comportement peut effectivement
+   *   être simulé). 
+   * 
+   * - si on reste coincé au-dessus de 100 pendant une poignée
+   *   de circuits, mieux vaut réessayer depuis le début
+   * 
+   * - quand on a obtenu quelques voitures de démo satisfaisantes,
+   *   on peut arrêter l'entraînement, sauvegarder la génération,
+   *   avec `saveGeneration(null, "demo")`, et commencer l'exploration
+   *   générationnelle à partir de là
+   */
+  nextTraining() {
+    let train = Generation.train
+    let trainer = train.trainer
+    if (!trainer)          throw 'no trainer'
+    if (!trainer.finished) throw `trainer is not available`
+    if (this.status == Generation.STATUS_TRAINING)
+      throw 'ongoing training'
+
+    let lists = this.lists
+    let trainee = trainer.trainee
+
+    if (!train.demo)
+      train.demo = []
+
+    train.demo = train.demo.filter(v => !v.dead)
+
+    if (trainee.demo && trainee.demo.finished) {
+      trainee.demo.brain = trainee.demo.brain.copy()
+      trainee.demo.name = `demo${trainee.demo.track.serial}`
+      train.demo.push(trainee.demo)
+    }
+
+    let demo = trainee.copy()
+    trainee.demo = demo
+    demo.name = 'demo'
+
+    lists.running = [trainer, demo].concat(train.demo)
+    lists.dead     = []
+    lists.finished = []
+    lists.stored = lists.running.splice(Generation.config.TOTAL)
+    this.status = Generation.STATUS_TRAINING
+
+    let onTrain = (e) => {
+      demo.brain = trainee.brain
+      this.status = Generation.STATUS_RUNNING
+    }
+    trainee.train(onTrain)
+  }
+
   /*
     Accesseurs pour quelque décomptes utiles
   */
@@ -1106,6 +1191,65 @@ class Generation {
     }
 
     return closest.vehicle
+  }
+
+  /** Prépare le maître dans une mini-génération voiture-école
+   * 
+   * Doit être précédé d'un appel à la version statique {@link Generation.prepareTraining}
+   * 
+   * Voir {@link nextTraining}
+   */
+  prepareTraining()
+  {
+    let idTrainer = Generation.train.trainer
+    let trainer = this.find(idTrainer)
+    let trainee = Generation.train.trainee
+
+    if (!trainer) trainer = this.lists.running[0]
+
+    // On limite artificiellement la vitesse du maître 
+    // pour avoir des données suffisamment denses.
+    // Attention ! Ceci empêche notablement d'entraîner un cerveau qui
+    // utilise d'une manière ou d'une autre la vitesse 
+    // maximale comme sonde d'entrée (il n'y en a pas dans la version 'sym-dir-1'
+    // de Vehicle, mais des versions oubliées du code en possédaient)
+    if (!trainer.limit.speed || trainer.limit.speed > REF_SPEED)
+      trainer.limit.speed = REF_SPEED
+
+    trainer.trainee = trainee
+    trainer.passed = {}
+    trainee.parentUuid = [trainer.uuid].concat(trainer.parentUuid)
+
+    let demo = new Vehicle(trainee)
+    demo.name = 'demo'
+
+    currentGen.total = 1
+    currentGen.lists.running = [trainer, demo]
+
+    if (!trainee.name) trainee.name = 'trainee'
+    if (!trainer.name) trainer.name = 'trainer'
+
+    Generation.train.trainer = trainer
+  }
+
+  /** Prépare l'élève dans un mini-génération voiture-école, et
+   * garde l'identité du maître dans un coin
+   * 
+   * @param {Generation} gen 
+   * @param {String} idTrainee 
+   * @param {String} idTrainer 
+   */
+
+  static prepareTraining(gen, idTrainee, idTrainer)
+  {
+    let trainee = gen.find(idTrainee)
+    if (!trainee) trainee = gen.lists.running[0]
+    if (!trainee.name) trainee.name = 'trainee'
+
+    Generation.train = {
+      trainee: trainee,
+      trainer: idTrainer
+    }
   }
 }
 

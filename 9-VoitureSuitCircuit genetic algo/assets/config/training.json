@@ -1,0 +1,8 @@
+{
+  "config": "Exemple de voiture-école",
+  
+  "Sketch": {
+    "LOAD_GEN": "car-simple-1",
+    "TRAINING": "seed-c::h9x6c1-f05"
+  }
+}

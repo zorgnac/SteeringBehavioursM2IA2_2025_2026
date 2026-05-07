@@ -2,6 +2,7 @@
 
 const TABLE_SIZE = 10;
 
+let alwaysKiller
 CONFIG.setup = () => {
   let def = CONFIG.Vehicle
   def()
@@ -24,9 +25,6 @@ CONFIG.setup = () => {
   for (let k in def) {
     Test.config[k] = def[k]
   }
-
-  def = CONFIG.Sketch
-  // def()
 }
 
 /** Circuit en cours      @type {Track}      */let currentTrack;
@@ -98,7 +96,7 @@ UI.setup = function ()
 
   UI.speedSlider = createSliderDiv(control,
     "Amount of physical steps in a clock tick",
-    'Speed', [0, 12, 1], UI.onSpeedChange);
+    'Speed', [0, 12, def.SPEED], UI.onSpeedChange);
   UI.rateSlider = createSliderDiv(control,
     "Number of clock ticks in a user second",
     'Rate', [0, def.RATES.length - 1, def.RATES.length-1], UI.onRateChange);
@@ -154,7 +152,8 @@ UI.setup = function ()
 
   UI.purgeCheck .checked(def.CHECK_PURGE)
   UI.killerCheck.checked(def.CHECK_KILLER)
-  UI.testCheck .checked(def.LOAD_KILLERS ? def.CHECK_TEST : false )
+  UI.genCheck   .checked(def.CHECK_PAUSE)
+  UI.testCheck  .checked(def.LOAD_KILLERS ? def.CHECK_TEST : false )
   UI.onRateChange()
 
   canvas.elt.addEventListener("click", (e) => {
@@ -213,6 +212,7 @@ UI.onRateChange = function()
 {
   let def = CONFIG.Sketch
   const rate = def.RATES[UI.rateSlider.value()]
+  console.log(`rate ${rate}`)
   frameRate(rate)
   if (UI.rateSlider.value() != 0 && UI.rateSlider.hold) {
     UI.messageDiv.html(UI.rateSlider.hold);
@@ -231,6 +231,10 @@ function preload() {
     Asset.load(def.LOAD_TRACKS , world => Track.initials = world)
     Asset.load(def.LOAD_KILLERS, world => Track.setKillers(world.tracks))
     Asset.load(def.LOAD_GEN    , gen   => currentGen     = gen)
+    if (def.TRAINING) {
+      let training = def.TRAINING.split(":")
+      Asset.load(training[0], gen => Generation.prepareTraining(gen, training[1], training[2]))
+    }
   }
 
   if (def.LOAD_CONFIG) {
@@ -240,12 +244,19 @@ function preload() {
     on_config()
 }
 
-
+let trainee
 function setup() {
   let track
 
   // tensor flow will work on the cpu
   tf.setBackend('cpu');
+  let def = CONFIG.Sketch
+  if (def.ALWAYS_KILLER) {
+    let always  = def.ALWAYS_KILLER
+    let conf    = Track.config
+    alwaysKiller = [conf.TRICKY, always[1], always[2]]
+    conf.TRICKY = always[0]
+  }
 
   // On met l'interface en place
   UI.setup()
@@ -260,6 +271,10 @@ function setup() {
   if (!currentGen)
     currentGen = new Generation()
 
+  if (Generation.train) {
+    currentGen.prepareTraining()
+  }
+
   // On crée un circuit...
   nextTrack(true)
   track = currentTrack
@@ -271,10 +286,12 @@ function setup() {
   killerTest.init(currentGen.lists.running)
 
   raceInfo()
-  UI.pause(UI.lastMessage)
+  brainInfo()
+  let {pause} = UI.status
+  if (pause) UI.pause(UI.lastMessage)
   let comment = createDiv()
   comment.class("Version")
-  comment.html("broom")
+  comment.html("École")
 }
 
 function onTestDone(message) {
@@ -517,18 +534,21 @@ function drawInfo(cycles, vehicle)
 
     text('elders     ', 10, y); text(elders   , 150, y); y+= 25;
     x = 200; y = 25
-    let str = `${vehicle}`
-    // QuickNDirty: ce bloc dépend de Vehicle.toString, et ce n'est pas une bonne
-    // chose. On devrait formater ici à la main, champ par champ, en 
-    // connaissance de cause.
-    let match = str.match(/([^ ]+) ([^ ]+) ([^ ]+) ([^ ]+) ([^ ]+) ([^ ]+)(?: ([^ ]+))?/)
-    if (match) {
-      text(`${currentGen.countAlive}: ${match[1]}`, x, y); x += 175+50
-      text(match[2], x, y); x += 50
-      text(match[3], x, y); x += 120
-      text(match[4], x, y); x += 100
-      text(match[5], x, y); x += 100
-      if (match[6]) { text(match[6], x, y); x += 100 }
+    let str = vehicle ? `${vehicle}` : 'no car'
+
+    if (vehicle) {
+      let {
+        id,  stats, max, laps,
+        score, vel
+      } = vehicle.summary
+
+      laps = laps ? `laps=${laps}` : ""
+      text(`${currentGen.countAlive}: ${id}`, x, y); x += 175 + 50
+      text(`[${score}]` , x, y); x += 60
+      text(`vel=${vel}%`, x, y); x += 120
+      text(`[${stats}`  , x, y); x += 150
+      text(`${max}]`    , x, y); x += 100
+      text(laps         , x, y); x += 100
     }
     else
       text(`${currentGen.countAlive}: ${str}`            , x, y); 
@@ -580,6 +600,17 @@ function draw() {
     // la plus intéressante.
     try 
     {
+      if (currentGen.status == Generation.STATUS_TRAINING) {
+        let info = Generation.train.trainee.brain.trainInfo
+        rate = 1
+        throw { 
+          type: UI, 
+          message: `Training[${info.duration}] ` + 
+          `${info.epoch}/`.padStart(5) + info.epochs +
+          ' loss ' + `${round(info.loss*1000,3)}`.padEnd(10) 
+        }
+      }
+
       vehicle = currentGen.run(cycles);
       
       // On répartit les voitures selon leur état (en course, dans le décor, ...)
@@ -625,40 +656,42 @@ function draw() {
 /** Qualifie le circuit en cours de tueur
  * - s'il l'est déjà, rien ne passe
  * - sinon :
- *   - on sauvegarde les tués et le circuit
- *     tueur
+ *   - on sauvegarde les tués et le circuit tueur
  *   - on enclenche éventuellement la qualification
  */
 function declareKiller()
 {
-  let def = Generation.config
+  const { AUTO_TEST, TOTAL } = Generation.config
+  let no
   no: {
     let known = !currentTrack.declareKiller(currentGen)
     if (known) break no
 
     console.log(`killer: ${currentTrack}`)
     let kill = `${currentTrack.kills}-t${currentTrack.serial - Track.offset}`
-    let savedGen = `k${kill}.gen`;
-    let savedTrack = `k${kill}.track`;
+    let savedGen   = `k${kill}.gen`;
+    let savedTrack = `k${kill}.trk`;
     saveGeneration(savedGen, ['dead']);
     saveTrack(savedTrack)
 
     let { test } = UI.status
     yes: {
-      let auto = def.AUTO_TEST
-      if (test) break no
-      if (auto === null || auto === false) break no
-      if (currentGen.total != def.TOTAL) break no
-      if (typeof auto == typeof true) break yes
+      let auto = AUTO_TEST
+      if (test)                                       { no = 'test'          ; break no}
+      if (auto === null || auto === false)            { no = 'false or null' ; break no }
+      if (currentGen.total != TOTAL)                  { no = 'TOTAL != total'; break no }
+      if (typeof auto == typeof true)     break yes
       if (currentGen.countElders <= auto) break yes
-      if (currentGen.countQualifiedOrElders > auto) break no
+      if (currentGen.countQualifiedOrElders >= TOTAL) { no = ''; break no }
     }
 
-    UI.message(`Not enough elders (elders=${currentGen.countElders} qualified=${currentGen.countQualifiedOrElders} auto=${def.AUTO_TEST}). Entering test`, true)
+    UI.message(`Not enough elders (elders=${currentGen.countElders} qualified=${currentGen.countQualifiedOrElders} auto=${AUTO_TEST}).` +
+      ` Entering test`, true)
     test = UI.testCheck
     test.checked(true)
     test.value('auto')
   }
+  if (no) UI.message(`Killer: skipping auto test because of ${no}`)
 }
 
 function mayPurge()
@@ -679,6 +712,22 @@ function mayPurge()
 
   return stored
 }
+function checkAlwaysKiller()
+{
+  if (alwaysKiller) {
+    if (currentTrack.declareKiller(currentGen)) {
+      console.log(`alwaysKiller(${alwaysKiller}): ${currentTrack}`)
+      if (currentTrack.tricky >= alwaysKiller[2]) {
+        console.log('done alwaysKiller')
+        Track.config.TRICKY = alwaysKiller[0]
+        alwaysKiller = null
+        UI.testCheck.checked(true)
+      }
+      else
+        Track.config.TRICKY += alwaysKiller[1]
+    }
+  }
+}
 function nextRace()
 {
   let {cycles, pause, purge, test} = UI.status
@@ -686,26 +735,36 @@ function nextRace()
     return
 
   {
-    let def = Generation.config
+    const {FROZEN, FINISHED} = Generation.config
     
-    if (purge && !test) { mayPurge(); }
 
+    if (purge && Generation.train)
+    {
+      log.warn(`disabling purge as training is ongoing`)
+      UI.purgeCheck.checked(false)
+      purge = false
+    }
+
+    if (purge && !test) { mayPurge(); }
+    
     currentGen.classifyFinished();
     if (!currentTrack.kills) {
       currentTrack.kills = currentGen.countDeadOld
     }
 
     let stored = currentGen.countStored;
+    checkAlwaysKiller()
 
     // On rapporte à l'utilisateur si le circuit est tueur :
     // un ancêtre ou un qualifié est mort
-    if (currentGen.countDead) {
+    if (currentGen.countDead && !Generation.train) {
       declareKiller()
     }
  
     // Sauf contre-indication, on ne change de circuit que si toutes voitures ont terminé
-    if (stored >= currentGen.total || !def.FINISHED)     {
-      nextTrack(true);
+    if (stored >= currentGen.total || FROZEN || !FINISHED)     {
+      if (!purge || test)
+        nextTrack(true);
     }
 
     // On prépare la nouvelle course, soit sur le même

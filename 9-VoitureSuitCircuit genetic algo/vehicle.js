@@ -28,6 +28,10 @@ const REF_SPEED = 2.5
  * 
  * Le dessin dans le canvas est assuré par {@link Vehicle.show} et {@link Vehicle.highlight}.
  * 
+ * Une voiture en apprentissage ({@link Vehicle.trainee}) enregistre le parcourt de
+ * son entraîneur ({@link Vehicle.follow}). Elle pourra ensuite ajuster son cerveau 
+ * en conséquence ({@link Vehicle.train}).
+ * 
  * Pour des versions anciennes, voir {@link Vehicle.Version}
  * 
  */
@@ -168,6 +172,8 @@ class Vehicle {
     this.hidden       = def.HIDDEN  ;
     this.options      = def.OPTIONS ;
     /** Points de championnat */ this.champion   = 0
+    /** Apprenti   @type Vehicle */ this.trainee = null
+    /** Démonstrateur d'un apprenti   @type Vehicle */ this.demo = null
 
     this.version  = this.constructor.version;
     
@@ -326,6 +332,9 @@ class Vehicle {
     }
   }
 
+  /** 
+   * @returns {Vehicle}
+   * */
   copy() {
     return new this.constructor(this)
   }
@@ -387,6 +396,9 @@ class Vehicle {
         "serial": this.serial
       }
     }
+    cells.score = this.points
+    cells.vel = this.vel ? round(this.vel.mag() / REF_SPEED * 100, 0) : 0
+
     if (this.finished) cells.n     = this.finished
     if (this.laps    ) cells.laps  = this.laps
     if (this.laps    ) cells.avg   = round(this.speed, 2)
@@ -609,13 +621,17 @@ class Vehicle {
   }
   /** Applique une mutation à l'ADN (réseau de neurones) de la voiture courante */
   mutate(parent) {
-    let def = Vehicle.config
+    const {
+      MUTATION_TEMPERATURE,
+      MUTATION_RATE
+    }    = this.constructor.config
+
     let ratio  = this.constructor.computeRatio
     let beta   = parent.beta
 
     let curves = this.curves
-    let temperature = ratio(beta, curves.temperature)*def.MUTATION_TEMPERATURE
-    let rate        = ratio(beta, curves.rate)       *def.MUTATION_RATE
+    let temperature = ratio(beta, curves.temperature)*MUTATION_TEMPERATURE
+    let rate        = ratio(beta, curves.rate)       *MUTATION_RATE
 
     this.brain.mutate(rate, temperature);
   }
@@ -643,7 +659,7 @@ class Vehicle {
 
   /** Met à jour la position et la vitesse en fonction de l'accélération */
   update() {
-    let def = this.constructor.config
+    const { LIFESPAN } = this.constructor.config
 
     if (!this.dead && !this.finished) {
       this.pos.add(this.vel);
@@ -657,7 +673,7 @@ class Vehicle {
       // si on dépasse le temps de vie
       // on meurt, on tue la voiture
       this.counter++;
-      if (this.counter > def.LIFESPAN) {
+      if (this.counter > LIFESPAN) {
         this.kill('abandon');
       }
 
@@ -671,7 +687,36 @@ class Vehicle {
       this.updateStats()
     }
   }
-  
+  /** Suit la position d'une voiture modèle pour entraînement */
+  follow(trainer) {
+    let limit = 'incompatible limits'
+    if (this.limit.speed != trainer.limit.speed)
+      if (this.limit.speed && trainer.limit.speed)
+        throw 'incompatible speed limits'
+    if (this.limit.force < trainer.limit.force)
+      throw 'incompatible force limits'
+
+    this.pos = trainer.pos
+    this.vel = trainer.vel
+    this.track = trainer.track
+    this.index = trainer.index
+
+    // if (!this.rays) 
+    {
+      const N = this.span, A = this.angle;
+      this.rays = []
+      // On crée des rayons tous les 15°, entre -45° et 45°
+      // on a un angle de vision de 90° (si N=3 et A=15)
+      for (let a = -N; a <= N; a++) {
+        this.rays.push(new Ray(this.pos, radians(a * A)));
+        // this.seen.push(null);
+      }
+    }
+    for (let i = 0; i < this.rays.length; i++) {
+      this.rays[i].rotate(this.vel.heading());
+    }
+  }
+
   /** Ajustements supplémentaires quand on boucle un tour */
   onlap() {
     this.speed = pow(2,this.track.length/this.total)-1
@@ -737,7 +782,7 @@ class Vehicle {
   */
   kill(reason, walls, d)
   {
-    /**@type Vehicle.config*/ let def = this.constructor.config
+    const { BETA_FACTOR_DEAD } = this.constructor.config
 
     const { track, index } = this;
     if (this.dead)      return;
@@ -768,16 +813,16 @@ class Vehicle {
 
     this.event = reason;
     this.dead  = reason;
-    this.beta *= def.BETA_FACTOR_DEAD
+    this.beta *= BETA_FACTOR_DEAD
   }
   
   /** Calcul de 'fitness' */
   calculateFitness() {
-    /** @type {Vehicle.config} */ let def = this.constructor.config
-    let speed = def.WEIGHT_SPEED*this.speed 
+    const {WEIGHT_SPEED} = this.constructor.config
+    let speed = WEIGHT_SPEED*this.speed 
 
     this.fitness = (1 + this.points) * (1 + speed) / 
-      ((this.track.laps*this.track.checkpoints.length+1)*(1+def.WEIGHT_SPEED))
+      ((this.track.laps*this.track.checkpoints.length+1)*(1+WEIGHT_SPEED))
 
     // on met la fitness au carré, pour voir si ça marche mieux
     this.fitness = pow(this.fitness, 2);
@@ -958,12 +1003,51 @@ class Vehicle {
   lookAndSteer(walls) {
     const inputs = this.lookAround(walls);
 
+    let trainee = this.trainee
+
     // On demande au réseau de neurones de prédire la prochaine action
     // output est un tableau à deux dimensions, deux neurones en sortie
     
     const outputs = this.decide(inputs);
+    if (trainee) {
+      let data = trainee.data
+      if (!data) {
+        data = trainee.data = { inputs: [], outputs: [] }
+      }
+      trainee.follow(this)
+
+      data.inputs.push(trainee.lookAround(walls))
+      data.outputs.push(outputs)
+    }
 
     return this.steer(outputs);
+  }
+
+  /** Entraînement sur donnée */
+  train(onTrain) {
+    let data = this.data
+    if (!data) {
+      throw 'no data'
+    }
+    if (!data.inputs || !data.inputs.length)
+    {
+      throw 'empty data'
+    }
+
+    /** @typedef TrainingData Donnée d'entraînement
+     * @property {number[][]} inputs
+     * @property {number[][]} outputs
+     * @property {number} loss Valeur de fonction de coût
+     */
+    /** @type TrainingData */ this.data = null
+    let loss = this.brain.train(data.inputs, data.outputs, onTrain)
+    loss.then(v => this.data = {
+      loss: v,
+      inputs: [],
+      outputs: []
+    })
+
+    return loss
   }
 
   /** Dessin de la voiture */
@@ -1036,20 +1120,21 @@ class Vehicle {
       // Vecteur vitesse et accélération
       push();
       translate(this.pos.x, this.pos.y);
-      const mag = 7;
+      const mag = 10;
       let max = this.vel.copy()
 
       max.setMag(this.speedUnit * mag);
 
-      strokeWeight(2);
-      stroke(255, 0, 0, 100);
+      strokeWeight(1);
+      stroke(255, 0, 0, 255);
       line(0, 0, max.x, max.y);
 
+      strokeWeight(3);
       stroke(255, 0, 0, 255);
-      line(0, 0, 3 * mag * this.vel.x, 3 * mag * this.vel.y);
+      line(0, 0, mag * this.vel.x,  mag * this.vel.y);
 
       stroke(255, 255, 0);
-      const {MAX_FORCE} = Vehicle.config
+      let MAX_FORCE = this.limit.force
       line(0, 0, mag * this.acc.x / MAX_FORCE, mag * this.acc.y / MAX_FORCE);
       pop();
     }
@@ -1146,7 +1231,25 @@ class Vehicle {
 Vehicle.Version = (function() {
   class V6 extends Vehicle {
     static version = 6
+
+    constructor(config) {
+      if (config.channels) {
+        if (Object.keys(config.channels).length)
+          throw `cannot emulate V6 channels`
+      }
+      if (config.ahead)
+        throw `cannot emulate V6 ahead sensors`
+      if (config.options) {
+        for (let key of ['behind', 'direct']) {
+          if (config.options[key])
+            throw `cannot emulate V6 '${key}' option`
+        }
+      }
+
+      super(config)
+    }
   }
+  
   class V1 extends Vehicle {
     static version = 1
 
