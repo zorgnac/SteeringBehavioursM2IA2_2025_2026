@@ -104,7 +104,7 @@ CONFIG = new Asset(CONFIG)
     let def = CONFIG.Sketch
 
     // def.LOAD_CONFIG = 'config/miage-0'
-    def.LOAD_CONFIG = 'config/training'
+    // def.LOAD_CONFIG = 'config/training'
 
     def.LOAD_GEN = [
         'car-simple-1',

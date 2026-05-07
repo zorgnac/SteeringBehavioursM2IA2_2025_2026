@@ -1074,7 +1074,7 @@ class Vehicle {
     stroke(0, 255, 0)
     strokeWeight(1)
     let dp = p5.Vector.sub(c, point)
-    const size = 7
+    const size = 3
     translate(point.x, point.y)
     rotate(dp.heading())
     translate(-size / 2, 0)
@@ -1112,7 +1112,7 @@ class Vehicle {
       for (let i in this.rays) {
         let ray = this.rays[i];
         let point = this.seen[i];
-        ray.show(point, sight);
+        ray.show(point, sight, direct);
         if (direct && point)
           this.showArrow(point, direct[i].point)
       }

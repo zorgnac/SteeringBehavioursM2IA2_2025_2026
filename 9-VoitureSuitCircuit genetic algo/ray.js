@@ -21,7 +21,7 @@ class Ray {
     }
   
     // On dessine le rayon
-    show(point, sight) {
+    show(point, sight, noDot) {
       stroke(0, 255, 0, 100);
       push();
       translate(this.pos.x, this.pos.y);
@@ -31,7 +31,8 @@ class Ray {
         line(0,0,x,y);
         stroke(0, 255, 0);
         strokeWeight(4);
-        line(x,y,x,y);
+        if (!noDot)
+          line(x,y,x,y);
       }
       else {
         line(0, 0, this.dir.x * sight, this.dir.y * sight);
