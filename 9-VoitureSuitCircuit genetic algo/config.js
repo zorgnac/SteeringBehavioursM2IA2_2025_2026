@@ -25,7 +25,8 @@
  *   }
  * }
  */
-const CONFIG = { 
+
+let CONFIG = { 
     /* Les entrées autres que Sketch (c'est à dire Vehicle, Track...) sont recopiées dans 
        les configurations des classes correspondantes(Vehicle.config, Track.config...)
         
@@ -41,13 +42,14 @@ const CONFIG = {
     /**
      * Les définitions LOAD_* nomment des JSON présents dans
      * le sous-répertoire assets. La génération peut être une
-     * voiture, une générations, ou une liste composée de telles
+     * voiture, une génération, ou une liste composée de telles
      * choses. Les mondes peuvent être des circuits, des mondes, ou une
      * listes de telles choses.
      * 
      * On peut oublier l'extension .json
      */
     Sketch: {
+        /** Configuration prédéfinie (JSON) @type string            */ LOAD_CONFIG : null,
         /** Génération prédéfinie           @type {string|string[]} */ LOAD_GEN    : null,
         /** Monde de circuits prédéfinis    @type {string|string[]} */ LOAD_TRACKS : null,
         /** Monde de circuits tueurs        @type {string|string[]} */ LOAD_KILLERS: null,
@@ -60,18 +62,22 @@ const CONFIG = {
 
     /** Configure selon diverses sources de configuration 
      * 
-     * CONFIG est définit dans 'config.js', et propose une surcharge
-     * des configurations par défaut des différentes classes. La
+     * CONFIG est définit dans 'config.js', et surcharge
+     * les configurations par défaut des différentes classes. La
      * surcharge elle-même n'est activée qu'à l'appel de CONFIG.setup.
      * 
      * La méthode 'setup' est virtuelle ; elle est normalement implémentée 
-     * dans 'sketch.js'
+     * dans 'sketch.js' (ou 'Asset')
     */
     setup: () => null
 }
 
+CONFIG = new Asset(CONFIG)
+
 {
     let def = CONFIG.Sketch
+
+    def.LOAD_CONFIG = 'config/miage-0'
 
     def.LOAD_GEN = [
         'car-simple-1',

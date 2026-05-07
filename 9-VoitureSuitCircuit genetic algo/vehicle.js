@@ -2,28 +2,8 @@
  * 
  * Doit rester la même indépendamment des évolutions
  * du code
- * */ 
+ * */
 const REF_SPEED = 2.5
-
-function pldistance(p1, p2, x, y) {
-    const num = abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x);
-    const den = p5.Vector.dist(p1, p2);
-    return num / den;
-  }
-  
-// Voir aussi : Boundary.signedDistance
-function pointToLineDistance(p1, p2, x, y) {
-  /*
-  v = (p2-p1)/ |p2-p1|
-  d = |p^v-p1^v|
-  */
-  const num = abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x);
-  const den = p5.Vector.dist(p1, p2);
-  return num / den;
-}
-
-
-
 /** 
  * Voiture de course
  * 
@@ -68,7 +48,7 @@ class Vehicle {
    * - celles qui sont directement référencées dans le code, et
    *   qui gèrent les aspects globaux, indépendants de l'instance ;
    *   ces entrées peuvent varier selon la version de Vehicle (voir
-   *   VehicleVersion* et PaceCar)
+   *   {@link {Vehicle.Version}})
    * 
    * - celles qui servent à l'initialisation de l'instance ; une
    *   instance copie les valeurs de `config`, mais ces copies
@@ -177,12 +157,12 @@ class Vehicle {
       sight     : def.SIGHT,
       safe      : def.SAFE
     }
-    /** Points de championnat */ this.champion   = 0
   
     this.span         = def.VIEW_SPAN;
     this.angle        = def.ANGLE   ;
     this.hidden       = def.HIDDEN  ;
     this.options      = def.OPTIONS ;
+    /** Points de championnat */ this.champion   = 0
 
     this.version  = this.constructor.version;
     
@@ -246,6 +226,8 @@ class Vehicle {
    * @param {Track} track - Le circuit 
    */
   prepare(track, alwaysRun) { 
+    if (!track) throw 'mandatory argument TRACK is missing'
+
     // Niveau d'adaptation (fitness).
     // Évalué en fin de course, puis réévalué (comme probabilité strictement positive) au changement de génération
     /** Niveau d'adaptation (mérite)         */ this.fitness = 0;
@@ -295,7 +277,7 @@ class Vehicle {
     }
 
     this.active = !passed;
-    this.goal = null
+    /** @type Boundary */ this.goal = null
 
     return !passed
   }
@@ -346,7 +328,7 @@ class Vehicle {
     this.brain.dispose();
   }
 
-  // Étiquettes de colonne pour 'cells' ci-dessous
+  /** Étiquettes de colonne pour 'summary' ci-dessous */
   static cells = [ "n", "laps", 
     // "fit", 
     "id", "stats", 
@@ -387,7 +369,7 @@ class Vehicle {
   }
 
   /** Résumé sous forme clé/valeur */
-  get cells() {
+  get summary() {
     let unit = this.speedUnit / REF_SPEED
 
     let vm = round(this.stats.vel.mean * 100 * unit, 0)
@@ -493,6 +475,7 @@ class Vehicle {
         break found
       }
 
+      console.warn(`version ${version} is not know. using default`)
       vehicle = new Vehicle(json)
     }
 
@@ -702,11 +685,11 @@ class Vehicle {
     }
   }
 
-  /** Vérifie si on a atteint le checkpoint, ou si on a atteint
-   *     la fin du circuit  */
+  /** Constate l'activité et vérifie si on a atteint le prochain passage cible
+   * 
+   * Agit en conséquence, en particulier si on vient de boucler un tour
+   * @param {Boundary[]} checkpoints */
   check(checkpoints) {
-    /** @type Vehicle.config */ let def = this.constructor.config
-
     if (!checkpoints) checkpoints = this.track.checkpoints;
 
     if (!this.finished && !this.dead) {
@@ -717,17 +700,14 @@ class Vehicle {
       this.goal = checkpoints[this.index];
 
       // Est-ce qu'on a atteint le checkpoint ?
-      // La fonction pointToLineDistance calcule la distance
-      // entre un point et une ligne définie par deux points
-      // c'est fourni par p5.js
-      const d = pointToLineDistance(this.goal.a, this.goal.b, this.pos.x, this.pos.y);
+      const d = this.goal.project(this.pos).sign
     
-      if (d < 5) {
+      if (d < 0) {
         // Si on l'a atteint, on passe au checkpoint suivant
         this.index = (this.index + 1) % checkpoints.length;
         // et on augmente le nombre de checkpoint passés ; la fitness sera calculée à partir de ce score
         this.points++;
-        // this.calculateFitness();
+        
         this.event = 'checkpoint';
         this.counter = 0;
         if (this.index == 1) { // Un nouveau tour bouclé
@@ -740,7 +720,9 @@ class Vehicle {
   /** Met la voiture hors course 
    * 
    * Selon la raison, met à jour le circuit vis-à-vis
-   * des zones dangereuses. Les voitures assassinées
+   * des zones dangereuses et globalement sur sa dangerosité.
+   * 
+   * Les voitures assassinées (reason='murder')
    * ne sont pas prises en compte dans l'estimation 
    * de la dangerosité du circuit.
   */
@@ -913,29 +895,33 @@ class Vehicle {
 
   /** Compose la symétrie des capteurs */
   makeSymmetry() {
-    let symmetry = new Vehicle.Sym
+    let sym = new Vehicle.Symmetry
 
     // Partie 'rays' : symétrie par rapport à un pivot
-    let n = this.span * 2 + 1
-    symmetry.symPivot(n)
+    let n = this.span*2+1
+    sym.symPivot(n)
 
     // Booléen directionnel: sens de parcourt
     if (this.options['side-direct']) {
-      symmetry.antiPivot(n)
+      sym.antiPivot(n)
     }
 
-    this.symmetry = symmetry
+    this.symmetry = sym
 
-    return symmetry
+    return sym
   }
 
   /** Décide de la consigne en fonction des capteurs */
   decide(inputs, symmetrize) {
     if (symmetrize == null) symmetrize = !this.options['no-sym']
-    let list
-    if (symmetrize) list = [inputs, this.symmetry.apply(inputs)]
-    else list = [inputs]
+    // if (!inputs) inputs = this.brain.last_predict.inputs[0]
+
+    let list = [inputs]
     
+    if (symmetrize) {
+      list.push(this.symmetry.apply(inputs))
+    }
+
     let predict  = this.brain.predict(...list);
 
     if (symmetrize) 
@@ -958,13 +944,13 @@ class Vehicle {
   // Elle va ensuite appliquer une force pour se diriger
   // vers le checkpoint suivant
   // Elle va aussi éviter les murs
+
+  /** Regarde, décide et agit */
   lookAndSteer(walls) {
     const inputs = this.lookAround(walls);
 
     // On demande au réseau de neurones de prédire la prochaine action
     // output est un tableau à deux dimensions, deux neurones en sortie
-    // output[0] est la direction
-    // output[1] est la vitesse
     
     const outputs = this.decide(inputs);
 
@@ -1025,10 +1011,10 @@ class Vehicle {
     rectMode(CENTER);
     rect(0, 0, 20, 10);
     pop();
-
-    // On dessine aussi les rayons de la voiture en tête
-    {  
+    if (!config["no-ray"]) {
+      // On dessine aussi les rayons de la voiture en tête
       let sight = this.limit.sight
+
       let direct = this.direct
       for (let i in this.rays) {
         let ray = this.rays[i];
@@ -1044,7 +1030,7 @@ class Vehicle {
     }
   }
 
-  static Sym = (function() {
+  static Symmetry = (function() {
     /** Symétrie des capteurs */
     class Sym {
       constructor() {
@@ -1121,6 +1107,11 @@ class Vehicle {
    * avec le code à jour
    */
   static Version = null
+
+  // Méthodes de tests divers
+  rotate() {
+    this.vel.mult(-1)
+  }
 }
 
 Vehicle.Version = (function() {
@@ -1150,6 +1141,11 @@ Vehicle.Version = (function() {
     }
   }
 
-  return {1:V1}
+  let versions = {}
+  for (let model of [V1]) {
+    versions[model.version] = model
+  }
+
+  return versions
 }
 )()

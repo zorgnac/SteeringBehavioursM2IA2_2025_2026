@@ -1,0 +1,38 @@
+{
+  "config": "Miage dans l'état initial",
+  
+  "Generation": {
+    "TOTAL": 100
+  },
+  
+  "Vehicle": {
+    "MUTATION_RATE": 0.1,
+    "MUTATION_TEMPERATURE": 1,
+    "BETA_TEMPERATURE": {"0":1},
+    "BETA_RATE": {"0":1},
+    
+    "LIFESPAN": 25,
+      
+    "SIGHT": 50,
+    "VIEW_SPAN": 3,
+    "ANGLE": 15,
+    
+    "HIDDEN" : "x2",
+    
+    "MAX_SPEED": 5,
+    "MAX_FORCE": 0.2,
+    "SAFE": 5,
+    
+    "OPTIONS": {
+      "no-sym": true,
+      "side-direct": false,
+      "activation": "sigmoid"
+    },
+    
+    "WEIGHT_SPEED": 0
+  },
+  
+  "Track": {
+    "TRICKY": 3
+  }
+}

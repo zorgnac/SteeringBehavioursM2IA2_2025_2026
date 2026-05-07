@@ -212,14 +212,25 @@ UI.onRateChange = function()
     UI.rateSlider.hold = null;
   }
 }
-
-function preload()
-{
+/**
+  Donnée sauvegardée
+*/
+function preload() {
   let def = CONFIG.Sketch
-  CONFIG.setup()
-  Asset.load(def.LOAD_TRACKS , world => Track.initials = world)
-  Asset.load(def.LOAD_KILLERS, world => Track.setKillers(world.tracks))
-  Asset.load(def.LOAD_GEN    , gen   => currentGen     = gen)
+
+  let on_config = () => {
+    CONFIG.setup()
+
+    Asset.load(def.LOAD_TRACKS , world => Track.initials = world)
+    Asset.load(def.LOAD_KILLERS, world => Track.setKillers(world.tracks))
+    Asset.load(def.LOAD_GEN    , gen   => currentGen     = gen)
+  }
+
+  if (def.LOAD_CONFIG) {
+    Asset.load(def.LOAD_CONFIG, on_config)
+  }
+  else
+    on_config()
 }
 
 
@@ -236,6 +247,8 @@ function setup() {
   killerTest.onNext = (next) => UI.testTable.html(killerTest.htmlInfo(next))
   killerTest.onDone = onTestDone
 
+  Test.onKillerClick = onTestKillerClick
+  
   // On crée les véhicules....
   if (!currentGen)
     currentGen = new Generation()
@@ -254,7 +267,7 @@ function setup() {
   UI.pause(UI.lastMessage)
   let comment = createDiv()
   comment.class("Version")
-  comment.html("VOI")
+  comment.html("Config")
 }
 
 function onTestDone(message) {
@@ -318,7 +331,7 @@ function raceInfo() {
   for (let list of [lists.finished, lists.running]) {
     for (let vehicle of list) {
       if (!vehicle.active) continue
-      if (!table.set(i, vehicle.cells))
+      if (!table.set(i, vehicle.summary))
         break
       i++
     }
@@ -347,7 +360,7 @@ function onRaceClick(e) {
   let serial = int(e.srcElement.parentElement.getAttribute("serial"))
   let vehicle = 'none'
   if (serial != null) vehicle = currentGen.find(serial)
-//  brainInfo(vehicle)
+  brainInfo(vehicle)
   selectVOI(vehicle)
 }
 
@@ -511,7 +524,7 @@ function drawInfo(cycles, vehicle)
     }
     else
       text(`${currentGen.countAlive}: ${str}`            , x, y); 
-
+    
     if (!cycles) {
       text("Pause - use Speed slider to animate", 400, 400)
     }
@@ -520,34 +533,35 @@ function drawInfo(cycles, vehicle)
 
 function onRunningException(x)
 {
-      let caught
-      if (x.message) {
-        if (x.type == UI)
-        {
-          UI.message(x.message)
-          caught = true
-        }
-        else {
-          UI.pause(x.message)
-          if (x.type && window[x.type]) {
-            window[x.type](x)
-            caught = true
-          }
-        }
+  let caught
+  if (x.message) {
+    if (x.type == UI)
+    {
+      UI.message(x.message)
+      caught = true
+    }
+    else {
+      UI.pause(x.message)
+      if (x.type && window[x.type]) {
+        window[x.type](x)
+        caught = true
       }
-      else {
-        UI.pause(`unknown '${x}'`)
-      }
-      if (!caught) {
-        console.log(x)
-        throw x
-      }
+    }
+  }
+  else {
+    UI.pause(`unknown '${x}'`)
+  }
+  if (!caught) {
+    console.log(x)
+    throw x
+  }
 }
 
-// Appelée 60 fois / seconde
+// Appelée 60 fois / seconde (mais voir frameRate)
 function draw() {
   let vehicle
-  const {cycles,step} = UI.status
+  let {cycles,step, rate} = UI.status
+
   background(0);
 
   running: {
@@ -596,6 +610,8 @@ function draw() {
     UI.speedSlider.value(0)
     if (UI.onStep) UI.onStep()
   }
+
+  frameRate(rate)
 }
 
 /** Qualifie le circuit en cours de tueur
@@ -664,7 +680,7 @@ function nextRace()
   {
     let def = Generation.config
     
-    if (purge) mayPurge();
+    if (purge && !test) { mayPurge(); }
 
     currentGen.classifyFinished();
     if (!currentTrack.kills) {
@@ -679,8 +695,7 @@ function nextRace()
       declareKiller()
     }
  
-    // On ne change de circuit que si le nombre minimal de voitures
-    // a terminé
+    // Sauf contre-indication, on ne change de circuit que si toutes voitures ont terminé
     if (stored >= currentGen.total || !def.FINISHED)     {
       nextTrack(true);
     }
