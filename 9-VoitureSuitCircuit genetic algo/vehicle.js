@@ -35,6 +35,9 @@ class Vehicle {
     /** Nombre de rayons               */ VIEW_SPAN       : 3           ,
     /** Angle entre rayons (degrés)    */ ANGLE           : 15          ,
 
+
+    /** Couches internes du cerveau    */ HIDDEN          : 0    , 
+
     /** Limite de vitesse              */ MAX_SPEED       : 5           ,
     /** Limite d'accélération          */ MAX_FORCE       : 0.2         ,
     /** Limite de distance aux murs
@@ -48,11 +51,13 @@ class Vehicle {
   /** Nombre de voitures arrivées dans la course en cours */
   static rank = 0 
 
-    constructor(brain) {
+  constructor(config) {
     Vehicle.serial++;
     /** Numéro de série    @type Int    */    this.serial = Vehicle.serial;
+    /** Identifiant unique @type String */    this.uuid   = Track.uuid()
 
-    let def = Vehicle.config
+    /** @type Vehicle.config */
+    let def     = this.constructor.config
 
     this.limit = {
       speed     : def.MAX_SPEED,
@@ -63,12 +68,33 @@ class Vehicle {
   
     this.span         = def.VIEW_SPAN;
     this.angle        = def.ANGLE   ;
+    this.hidden       = def.HIDDEN  ;
 
+    /** Nombre de circuits terminés     */ this.old      = 0;
 
     /** Statistiques de parcourt */
     this.stats   = { vel: {sum1: 0, sum2: 0, mean: 0, sigma: 0}, N: 0 }
 
-      let length = 2*this.span+1;
+    /** Vitesse moyenne au dernier tour 
+     * 
+     * Diffère de {@link Vehicle.stats} parce qu'elle
+     *   rend compte de l'efficacité de parcourt 
+    */
+    this.speed   = 0; //  (unité en tours par durée normalisée)
+
+    let brain  = null;
+    let parent = null;
+    if (config instanceof Vehicle) { // config est une autre voiture
+      parent = config
+      brain  = config.brain;
+    }
+    /** @type NeuralNetwork */this.brain = null
+
+    if (config && !brain) // config est un JSON
+      this.fromJSON(config);
+
+    else {
+      this.inherit(parent);
 
       // On crée le "cerveau" de la voiture
       // C'est un réseau de neurones
@@ -77,22 +103,12 @@ class Vehicle {
       if (brain) {
         this.brain = brain.copy();
       } else {
-        // On créer un réseau de neurones, le nombre de neurones
-        // en entrée est égal au nombre de rayons
-        // le nombre de neurones en sortie est égal à 2
-        // car on a 2 sorties, la direction et la vitesse
-        // On a donc 2 couches cachées
-        // Le nombre de neurones dans le layer caché est égal
-        // au nombre de neurones en entrée * 2
-        // On a donc 2 layers de length neurones
-        // si length vaut 9 par exemple, on a 9 neurones en entrée
-        // On a donc 18 neurones en tout
-        // On a donc 18 * 18 + 18 = 342 poids
-        // On a donc 342 + 18 = 360 biais
-        // On a donc 360 + 342 = 702 paramètres
-        this.brain = new NeuralNetwork(null, length, length * 2, 2);
+        this.makeBrain()
       }
     }
+  }
+
+
 
   /** 
    * Place sur la ligne de départ 
@@ -140,11 +156,151 @@ class Vehicle {
       this.rays.push(new Ray(this.pos, radians(a * A)));
       this.seen.push(null);
     }
+
+    return true
   }
-  
+
+  /**
+   * Prépare le cerveau
+   */
+  makeBrain() {
+    let width = (2 * this.span + 1)
+
+    let hidden       = this.hidden;
+    if (!hidden) hidden = width*2
+    let final        = 2
+    this.brain  = new NeuralNetwork(null, width, hidden, final);
+  }
+
+  /** Hérite - pas de mutation ici (voir {@link Vehicle.mutate}) */
+  inherit(parent)
+  {
+    let def = this.constructor.config
+
+    if (parent) {
+      this.limit = {}     
+      for (let k in parent.limit) {
+        this.limit[k] = parent.limit[k]
+      }
+      this.span         = parent.span     ;
+      this.angle        = parent.angle    ;
+      
+      this.hidden = parent.hidden
+    }
+  }
+
+  copy() {
+    return new this.constructor(this)
+  }
   dispose() {
     this.brain.dispose();
   }
+
+  get id() {
+    let id = `${this.serial}(${this.old}${this.parent != null ? "#" + this.parent : ""})`
+    if (this.name)
+      id = this.name;
+    return id;
+  }
+  /** Représentation externe
+  */
+  toString(td) {
+    let str
+    const ref = 2.5
+    let unit = this.speedUnit / ref
+
+    let vm = round(this.stats.vel.mean *100*unit, 0)
+    let vs = round(this.stats.vel.sigma*100*unit, 0)
+    let vl = round(this.stats.vel.max  *100*unit, 0)
+
+    {
+      let vel = this.vel ? round(this.vel.mag()/ref*100,0) : 0
+      let score = this.fitness ? round(this.fitness*100,0) : this.points;
+      str = `${this.id} [${score}]`
+
+      str += ` vel=${vel}% [${vm}±${vs} ${vl}]`
+      if (this.laps) {
+        str = str + ` lap=${this.laps+1}/${this.track.laps} avg=${round(this.speed,2)}`
+      }
+      else {
+        if (this.track)
+          str += ` lap=1/${this.track.laps}`
+      }
+    }
+    return str
+  }
+
+  toJSON() {
+    let json = {};
+
+    let set_always = (keys) => {
+      for (let k of keys)
+        json[k] = this[k];
+    }
+    let set_if = (keys) => {
+      for (let k of keys)
+        if (k in this)
+          json[k] = this[k];
+    }
+
+    let keys
+    keys = [ 
+      "version", 
+      "span", 
+      "angle", 
+      "old", 
+      "hidden",
+      "uuid", 
+      "dead",
+      "limit",
+    ]
+    set_if(["name", "champion"])
+    set_always(keys)
+    
+
+    if (this.brain)
+      json.brain = this.brain.toJSON();
+
+    return json
+  }
+  /** Fusionne la valeur par défaut et la valeur du JSON */
+  static merge(k, tgt, src) {
+    done: {
+      if (!(k in tgt) || !tgt[k]) {
+        tgt[k] = src[k]
+        break done
+      }
+
+      if (Array.isArray(src[k])) {
+        tgt[k] = src[k]
+        break done
+      }
+      if (typeof src[k] == typeof {}) {
+        let src_k = src[k], tgt_k = tgt[k]
+        for (let k in src_k)
+          Vehicle.merge(k, tgt_k, src_k)
+        break done
+      }
+      
+      tgt[k] = src[k]
+    }
+  }
+  
+  fromJSON(json) {
+    for (let k in json)
+    {
+      this.constructor.merge(k, this, json);
+    }
+
+    if (json.brain) {
+      this.brain        = NeuralNetwork.fromJSON(json.brain);
+      this.hidden       = this.brain.hidden_nodes;
+    }
+
+    else 
+      this.makeBrain()
+  }
+
 
   applyBehaviors(walls) {
     // On appelle le comportement look
@@ -436,16 +592,22 @@ class Vehicle {
     return this.steer(outputs);
   }
 
-  // Dessin de la voiture
+  /** Dessin de la voiture */
   show() {
-    push();
-    translate(this.pos.x, this.pos.y);
-    const heading = this.vel.heading();
-    rotate(heading);
-    fill(255, 100);
-    rectMode(CENTER);
-    rect(0, 0, 10, 5);
-    pop();
+    if (!this.pos)
+      console.log(`${this}: no pos`)
+    else {
+      push();
+      translate(this.pos.x, this.pos.y);
+      const heading = this.vel.heading();
+      rotate(heading);
+      if (this.old)
+        stroke(255, 0, 0);
+      fill(255, 100);
+      rectMode(CENTER);
+      rect(0, 0, 10, 5);
+      pop();
+    }
   }
 
   // Met en surbrillance la voiture
@@ -461,8 +623,14 @@ class Vehicle {
     pop();
 
     // On dessine aussi les rayons de la voiture en tête
-    for (let ray of this.rays) {
-      ray.show();
+    {  
+      let sight = this.limit.sight
+      for (let i in this.rays) {
+        let ray = this.rays[i];
+        let point = this.seen[i];
+        // console.log(`seen ${point}`);
+        ray.show(point, sight);
+      }
     }
     if (this.goal) {
       this.goal.show();

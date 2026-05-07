@@ -21,11 +21,21 @@ class Ray {
     }
   
     // On dessine le rayon
-    show() {
+    show(point, sight) {
       stroke(0, 255, 0, 100);
       push();
       translate(this.pos.x, this.pos.y);
-      line(0, 0, this.dir.x * SIGHT, this.dir.y * SIGHT);
+      if (point) {
+        let x = point.x - this.pos.x
+        let y = point.y - this.pos.y
+        line(0,0,x,y);
+        stroke(0, 255, 0);
+        strokeWeight(4);
+        line(x,y,x,y);
+      }
+      else {
+        line(0, 0, this.dir.x * sight, this.dir.y * sight);
+      }
       pop();
     }
   
