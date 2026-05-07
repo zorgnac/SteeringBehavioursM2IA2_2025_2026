@@ -106,21 +106,62 @@ class Vehicle {
 
     /** Capteurs de checkpoint {@link Vehicle.lookAhead}
      * 
-     * On donne la direction des AHEAD prochain checkpoints   */ 
+     * On donne la direction des AHEAD prochain checkpoints   
+     * 
+     * Note
+     * - Ces capteurs ont servi historiquement à montrer
+     *   qu'on pouvait espérer la résilience. Il sont
+     *   cependant beaucoup trop informatifs : ils donnent
+     *   essentiellement la direction à suivre.
+     * - Plus intéressante est l'option 'side-direct', qui
+     *   observe les flèches de direction peintes 
+     *   sur les murs.
+     * */ 
     AHEAD           : 0           ,
 
-    /** Options (capteurs et cerveau) */
+    /** Options (capteurs et cerveau) 
+     * 
+     * Note
+     * - `behind` est une tentative pour donner une 
+     *   information un peu moins forte que AHEAD. Ca
+     *   ne marche pas trop.
+     * - `ahead-distance` enfonce le clou sur AHEAD
+     * - `direct` est une version édulcorée de 
+     *   `side-direct`, où ne considère que le mur
+     *   en face
+     * - `weight-direct` est un pré-calcul de `side-direct`,
+     *   où on pondère l'orientation indiquée sur les murs  (qui à la base 
+     *   est booléenne) par la distance au mur. Cette option
+     *   permet d'utiliser des cerveaux très petits. Mais 
+     *   on peut préférer demander au cerveau de se débrouiller
+     *   tout seul pour faire cette multiplication (qui au
+     *   bout du compte est par 0 ou 1). Il suffit
+     *   `a priori` de compter 2 fois plus de neurones
+     *   sur la couche d'entrée.
+    */
+
     OPTIONS         : { 
       /** Désactive la symétrie                  */ 'no-sym'     : false,
       /** AHEAD inclut la distance               */ 'ahead-distance': false,
       /** Ajoute le checkpoint précédent à AHEAD */ 'behind': false,
       /** Capteur de sens de parcourt            */ 'direct': false,
-      /** Sens sur tous rayons                   */ 'side-direct': false,
-      /** Pondération du sens                    */ 'weight-direct': false,
+      /** Orientation sur tous rayons            */ 'side-direct': false,
+      /** Pondération de l'orientation           */ 'weight-direct': false,
       /** Fonction d'activation                  */ 'activation': 'sigmoid'
     }        ,
 
-    /** Capteurs composites (pré-calcul)  */
+    /** Capteurs composites (pré-calcul)
+     * 
+     * Note 
+     * - on a défini ici la vitesse, et des pré-calculs 
+     *   associés qui semblent difficiles à réaliser 
+     *   (typiquement la distance de freinage) par
+     *   des cerveaux à couches linéaires . Il s'avère
+     *   que c'est une fausse bonne idée (au mieux une 
+     *   cerise sur la gâteau): la voiture peut très
+     *   bien se débrouiller en imaginant qu'elle est
+     *   à vitesse maximale, et agir en conséquence.
+      */
     CHANNELS        : {},// 
 
     // Constantes de calcul de fitness
