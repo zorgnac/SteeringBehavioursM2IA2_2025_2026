@@ -1,4 +1,4 @@
-
+let COMMENT = "Pas de console.log"
 
 const TOTAL = 100;
 const MUTATION_RATE = 0.1;
@@ -35,6 +35,8 @@ function setup() {
   }
 
   speedSlider = createSlider(0, 10, 0);
+  let comment = createDiv()
+  comment.html(COMMENT)
 }
 
 // Appelée 60 fois / seconde
