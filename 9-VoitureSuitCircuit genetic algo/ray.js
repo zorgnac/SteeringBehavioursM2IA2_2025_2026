@@ -24,7 +24,6 @@ class Ray {
     show() {
       stroke(0, 255, 0, 100);
       push();
-      strokeWeight(3);
       translate(this.pos.x, this.pos.y);
       line(0, 0, this.dir.x * SIGHT, this.dir.y * SIGHT);
       pop();

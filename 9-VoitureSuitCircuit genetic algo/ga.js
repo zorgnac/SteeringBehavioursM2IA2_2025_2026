@@ -1,7 +1,7 @@
 
 // Fonctions pour le calcul génétique
 // On va créer une nouvelle génération de voitures
-function nextGeneration() {
+function nextGeneration(track) {
     console.log('next generation');
     
     // On calcule la fitness de chaque voiture: on regarde
@@ -12,9 +12,10 @@ function nextGeneration() {
       // Pour la mutation, on choisit un parent au hasard
       // population est le tableau des voitures "vivantes", on
       // le remplit avec des voitures issues de la génération précédente
-      // et choisies parmis les meilleurs, avec de l'aléatoire et 
+      // et choisies parmi les meilleurs, avec de l'aléatoire et 
       // des mutations possibles (c'est fait dans pickOne())
       population[i] = pickOne();
+      population[i].prepare(track)
     }
 
     // On vide le tableau des voitures mortes
@@ -29,10 +30,8 @@ function nextGeneration() {
     let index = 0;
 
     // Algorithme de la roulette
-    // On tire au hasard une voiture parmis les meilleures,
-    // mais avec une probabilité proportionnelle à la fitness
-    // la voiture qui est allée le plus loin a plus de chances
-    // d'être choisie que les autres
+    // On tire un nombre r au hasard, par exemple
+    // 0.5
     // On parcourt le tableau des voitures en enlevant
     // la fitness à r et on s'arrête dès que r <= 0;
     // la valeur de index est le véhicule choisi
