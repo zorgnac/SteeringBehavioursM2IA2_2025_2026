@@ -1,13 +1,28 @@
-let COMMENT = "Les vieux en piste"
 
-const TOTAL = 100;
-
+let Sketch = {}
 let speedSlider;
 
-/** Circuit en cours @type {Track} */let currentTrack;
+/** Circuit en cours    @type {Track}      */let currentTrack;
 /** Generation en cours @type {Generation} */let currentGen;
 
-let changeMap = false;
+function config()
+{
+  let def = Sketch
+  def.LOAD_TRACKS = [ 
+    // 'initialTracks'
+  ]
+  def.LOAD_GEN = [
+    // 'gen45'
+  ]
+}
+
+function preload()
+{
+  let def = Sketch
+  config()
+  Asset.load(def.LOAD_TRACKS, world => Track.initials = world)
+  Asset.load(def.LOAD_GEN   , gen   => currentGen     = gen)
+}
 
 function setup() {
   let track
@@ -16,16 +31,17 @@ function setup() {
   // tensor flow will work on the cpu
   tf.setBackend('cpu');
 
-  currentTrack = track = new Track();
+  currentTrack = track = Track.next();
   track.show()
 
   // On crée les véhicules....
-  currentGen = new Generation()
+  if (!currentGen)
+    currentGen = new Generation()
   currentGen.prepare(track)
 
   speedSlider = createSlider(0, 10, 0);
   let comment = createDiv()
-  comment.html(COMMENT)
+  comment.html("Persistence")
 }
 
 // Appelée 60 fois / seconde
@@ -43,7 +59,7 @@ function draw() {
 
   // Si jamais on a plus de voitures, on passe à la génération suivante
   if (!currentGen.countRunning) {
-    currentTrack = track = new Track();
+    currentTrack = track = Track.next();
     currentGen.classifyFinished()
     currentGen = currentGen.next(track)
     currentGen.prepare(track)

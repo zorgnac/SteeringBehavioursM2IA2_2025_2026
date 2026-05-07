@@ -293,7 +293,7 @@ class Vehicle {
     }
 
     if (json.brain) {
-      this.brain        = NeuralNetwork.fromJSON(json.brain);
+      this.brain        = new NeuralNetwork(json.brain);
       this.hidden       = this.brain.hidden_nodes;
     }
 

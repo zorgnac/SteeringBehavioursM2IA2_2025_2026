@@ -13,6 +13,7 @@ class Track {
     /** Incrément difficulté à chaque nouveau circuit */ DT : 0
   }
 
+  /** @returns {String} Identifiant unique */
   static uuid() {
     //someone else's function
     //https://slavik.meltser.info/the-efficient-way-to-create-guid-uuid-in-javascript-with-explanation/
@@ -53,7 +54,7 @@ class Track {
     def.TRICKY += def.DT
 
     this.checkpoints = [];
-    this.uuid = this.constructor.uuid()
+    this.uuid = Track.uuid()
 
     const total = 60;
     let seed = { x: random(1000), y: random(1000) }
@@ -502,20 +503,22 @@ class World {
     this.populate(json)
   }
   populate(def) {
-    let tracks = this.tracks
-    let ids = this.tracks
+    let ids = this.ids
     if (def) {
-      if (!def.tracks) throw 'World definition has no track'
+      let tracks = def.tracks
+      if (!tracks) tracks = def.killers
 
-      for (let one of def.tracks) {
+      if (!tracks) throw 'World definition has no track'
+
+      for (let one of tracks) {
         let track
         if (one instanceof Track) track = one
         else track = new Track(one)
-        if (ids[track.uuid]) {
+        if (track.uuid in ids) {
           console.log(`Track ${track.uuid} is a doublon`)
           continue
         }
-        tracks.push(track)
+        this.tracks.push(track)
         ids[track.uuid] = track
       }
     }

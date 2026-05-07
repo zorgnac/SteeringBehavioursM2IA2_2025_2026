@@ -255,7 +255,7 @@ class Generation {
         vehicle = config
       }
       else
-        vehicle = Vehicle.fromJSON(config)
+        vehicle = new Vehicle(config)
 
       if (vehicle.uuid in ids) continue
       ids[vehicle.uuid] = vehicle

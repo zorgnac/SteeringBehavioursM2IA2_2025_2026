@@ -14,6 +14,9 @@ class NeuralNetwork {
         this.hidden_nodes = hidden;
         this.output_nodes = output;
       } 
+      else if (model && typeof model == typeof {}) {
+        this.fromJSON(model)
+      }
       else {
         this.input_nodes = input;
         this.hidden_nodes = hidden;
@@ -105,7 +108,66 @@ class NeuralNetwork {
         return mutated;
       });
     }
-  
+
+    /* Persistance du cerveau */
+
+    toJSON() {
+      let json = {
+        inputs : this.input_nodes,
+        hidden : this.hidden_nodes,
+        outputs: this.output_nodes,
+        temperature: this.temperature,
+        rate       : this.rate,
+        mutations  : this.mutations
+      };
+      for (let k of ["activation", "targets"])
+      {
+        if (k in this)
+          json[k] = this[k]
+      }
+
+      const weights = this.model.getWeights();
+
+      let weight = tensor => {
+        let shape  = tensor.shape;
+        let values = tensor.dataSync().slice();
+        let generic = [] // Valeur float (sans type spécifique)
+
+        for (let j = 0; j < values.length; j++) {
+          let w = values[j];
+          generic.push(w);
+        }
+        return { 
+          shape : shape,
+          values: generic
+        }
+      };
+
+      json.weights = weights.map(weight);
+
+      return json;
+    }
+    fromJSON(json) {
+      // TODO: a-t-on besoin de tf.tidy() ici ?
+      this.input_nodes  = json.inputs;
+      this.hidden_nodes = json.hidden;
+      this.output_nodes = json.outputs;
+      for (let k of ["activation", "temperature", "mutations", "rate", "targets"]) {
+        if (k in json)
+          this[k] = json[k]
+      }
+      // this.model.dispose();
+      this.model = this.createModel();
+
+      const weights = [];
+      for (let weight of json.weights) {
+        let tensor = tf.tensor(weight.values, weight.shape);
+        weights.push(tensor);
+      }
+
+      this.model.setWeights(weights);
+    }
+
     dispose() {
       this.model.dispose();
     }
@@ -133,20 +195,48 @@ class NeuralNetwork {
       // On crée un réseau de neurones
       // avec une couche d'entrée, une couche cachée et une couche de sortie
       const model = tf.sequential();
+      let activation = 'sigmoid'
+      if (this.activation) activation = this.activation
 
-      // couche d'activation classique de type sigmoide
-      const hidden = tf.layers.dense({
-        units: this.hidden_nodes,
+      let args = {
         inputShape: [this.input_nodes],
-        activation: 'sigmoid'
-      });
+        activation: activation,
+        // kernelInitializer: tf.initializers.randomNormal({ mean: 0.0, stddev: 0.1 }),
+        // biasInitializer: tf.initializers.randomNormal({ mean: 0.0, stddev: 0.1 })
+      }
+      if (activation == "relu") {
+        args.kernelInitializer = tf.initializers.heNormal(0.5)
+        args.biasInitializer = tf.initializers.heNormal(0.5)
+      }
 
-      model.add(hidden);
+      if (Array.isArray(this.hidden_nodes))
+      {
+        let hidden = this.hidden_nodes;
+        args.units = hidden[0]
 
-      const output = tf.layers.dense({
-        units: this.output_nodes,
-        activation: 'sigmoid'
-      });
+        const first = tf.layers.dense(args);
+
+        model.add(first);
+        delete args.inputShape
+
+        for (let i = 1; i < hidden.length; i++) {
+          args.units = hidden[i]
+          const next = tf.layers.dense(args);
+
+          model.add(next);
+        }
+      }
+      else {
+        args.units = this.hidden_nodes
+        // couche d'activation classique de type sigmoïde
+        const hidden = tf.layers.dense(args);
+
+        model.add(hidden);
+        delete args.inputShape
+      }
+
+      args.units = this.output_nodes
+      const output = tf.layers.dense(args);
       model.add(output);
 
       return model;
