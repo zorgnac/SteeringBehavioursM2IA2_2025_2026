@@ -104,12 +104,25 @@ class Vehicle {
      * a le droit de mordre de 0.01 pixel sur le bord de 
      * piste                           */ SAFE            : 0           ,
 
+    /** Capteurs de checkpoint {@link Vehicle.lookAhead}
+     * 
+     * On donne la direction des AHEAD prochain checkpoints   */ 
+    AHEAD           : 0           ,
+
     /** Options (capteurs et cerveau) */
     OPTIONS         : { 
       /** Désactive la symétrie                  */ 'no-sym'     : false,
-      /** Sens sur tous rayons                   */ 'side-direct': true,
-      /** Fonction d'activation                  */ 'activation': 'relu'
+      /** AHEAD inclut la distance               */ 'ahead-distance': false,
+      /** Ajoute le checkpoint précédent à AHEAD */ 'behind': false,
+      /** Capteur de sens de parcourt            */ 'direct': false,
+      /** Sens sur tous rayons                   */ 'side-direct': false,
+      /** Pondération du sens                    */ 'weight-direct': false,
+      /** Fonction d'activation                  */ 'activation': 'sigmoid'
     }        ,
+
+    /** Capteurs composites (pré-calcul)  */
+    CHANNELS        : {},// 
+
     // Constantes de calcul de fitness
     /** Poids de la vitesse au tour */ WEIGHT_SPEED    : 1           ,
 
@@ -169,7 +182,9 @@ class Vehicle {
   
     this.span         = def.VIEW_SPAN;
     this.angle        = def.ANGLE   ;
+    this.ahead        = def.AHEAD   ;
     this.hidden       = def.HIDDEN  ;
+    this.channels     = def.CHANNELS;
     this.options      = def.OPTIONS ;
     /** Points de championnat */ this.champion   = 0
     /** Apprenti   @type Vehicle */ this.trainee = null
@@ -297,13 +312,21 @@ class Vehicle {
    * Prépare le cerveau
    */
   makeBrain() {
+    let channels = Object.keys(this.channels).length
     let width = (2 * this.span + 1)
+    let ahead        = this.ahead
+    if (this.options['behind'])
+      ahead += 1
+    if (this.options['ahead-distance'])
+      ahead *= 2
 
     let direct = 0
     if (this.options['side-direct'])
       direct = width
+    else if (this.options['direct'])
+      direct = 1
 
-    width        += direct;
+    width        += channels+ahead+direct;
     let hidden       = this.hidden;
     if (hidden == 'x2') hidden = width*2
     let final        = 2
@@ -313,7 +336,7 @@ class Vehicle {
   /** Hérite - pas de mutation ici (voir {@link Vehicle.mutate}) */
   inherit(parent)
   {
-    let def = this.constructor.config
+    const { BETA_FACTOR_INHERIT } = this.constructor.config
 
     if (parent) {
       this.limit = {}     
@@ -322,13 +345,15 @@ class Vehicle {
       }
       this.span         = parent.span     ;
       this.angle        = parent.angle    ;
+      this.ahead        = parent.ahead    ;
+      this.channels     = parent.channels // .slice() ;
       this.parentUuid = [parent.uuid].concat(parent.parentUuid)
       this.curves       = parent.curves
       this.options      = parent.options
       
       this.hidden = parent.hidden
       this.version  = parent.version       ;
-      this.beta     = parent.beta*def.BETA_FACTOR_INHERIT      ;
+      this.beta     = parent.beta*BETA_FACTOR_INHERIT      ;
     }
   }
 
@@ -440,6 +465,7 @@ class Vehicle {
     
     set_if([ 
       "ahead",
+      "channels",
       "parentUuid", 
       "qualified" 
     ])
@@ -852,7 +878,8 @@ class Vehicle {
         x.vehicle = this
       throw x
     }
-    let direct = this.options["side-direct"] ? "side" : null
+    let weighted = this.options["weight-direct"]
+    let direct = this.options["direct"] ? "direct" : (this.options["side-direct"] || weighted) ? "side" : null
     if (direct)
       this.direct = []
 
@@ -902,16 +929,45 @@ class Vehicle {
         let pp = p5.Vector.sub(closest.point, this.pos)
         let sign = p5.Vector.cross(pc, pp).z
         sign = sign > 0 ? 1 : 0
+          if (weighted)
+            sign = (sign-0.5)*input + 0.5
         
         this.direct[i] = { point: c, sign: sign }
       }
     }
-
-    if (direct) {
+    switch (direct) {
       // On pousse "sign" qu'on vient de calculer
-      for (let side of this.direct) {
-        inputs.push(side.sign)
+      case "direct": inputs.push(this.direct[this.span].sign); break
+      case "side":
+        for (let side of this.direct) {
+          inputs.push(side.sign)
+        }
+    }
+
+    // Une entrée supplémentaire pour la vitesse, ou plus
+    // généralement N entrées par pré-calcul nommé dans 'channels'
+    let v1 = this.vel.mag() / this.speedUnit
+    let v2 = v1*v1
+    for (let channel in this.channels) {
+      switch (channel) {
+        case 'v' : inputs.push(v1*this.channels[channel]); break;
+        case 'v2': inputs.push(v2*this.channels[channel]); break;
+        case 'h[0]v2':
+        case 'h[0]*v2':
+          { 
+            let risk = inputs[this.span] * v2 * this.channels[channel]
+            inputs.push(risk)
+          }
+          break;
+        default:
+          throw `no support for channel '${channel}'`
       }
+    }
+
+    if (this.ahead || this.options['behind']) {
+      // Une autre pour la direction du prochain checkpoint
+      for (let ahead of this.lookAhead())
+        inputs.push(ahead);
     }
 
     return inputs
@@ -958,6 +1014,23 @@ class Vehicle {
     // Booléen directionnel: sens de parcourt
     if (this.options['side-direct']) {
       sym.antiPivot(n)
+    }
+    else if (this.options['direct']) {
+      sym.antiPivot(1)
+    }
+
+    // Partie 'pre-calcul': copie
+    sym.copy(Object.keys(this.channels).length)
+
+    // Partie 'ahead'/'behind' : anti-symétrie point par point
+    let distance = this.options['ahead-distance']
+    sym.antiPlace(this.ahead)
+    if (distance)
+      sym.copy(this.ahead)
+    if (this.options['behind']) {
+      sym.antiPlace(1)
+      if (distance)
+        sym.copy(1)
     }
 
     this.symmetry = sym
@@ -1021,6 +1094,43 @@ class Vehicle {
     }
 
     return this.steer(outputs);
+  }
+
+  /** Capteurs de checkpoint */
+  lookAhead() {
+    let checkpoints = this.track.checkpoints;
+    let N = checkpoints.length;
+    let V = this.vel;
+    let distance = this.options['ahead-distance']
+
+    let look = (i) => {
+      let p = checkpoints[(this.index+i)%N].midpoint()
+      p = p5.Vector.sub(p, this.pos);
+      let a = p.angleBetween(V)
+      let r = [a == a ? map(a, -PI, PI, 0, 1) : 0.5]
+      if (distance) {
+        a = p.mag()
+        r[1] = a == a ? a/this.limit.sight : 1
+      }
+
+      return r;
+    }
+    let ahead       = []
+    for (let i = 0; i < this.ahead; i++)
+    {
+      let r = look(i)
+      ahead[i] = r[0]
+      if (r.length > 1)
+        ahead[i + this.ahead] = r[0]
+    }
+    if (this.options['behind']) {
+      let r = look(N-1)
+      ahead[i] = r[0]
+      if (r.length > 1)
+        ahead[i + this.ahead] = r[0]
+    }
+
+    return ahead;
   }
 
   /** Entraînement sur donnée */
@@ -1231,23 +1341,6 @@ class Vehicle {
 Vehicle.Version = (function() {
   class V6 extends Vehicle {
     static version = 6
-
-    constructor(config) {
-      if (config.channels) {
-        if (Object.keys(config.channels).length)
-          throw `cannot emulate V6 channels`
-      }
-      if (config.ahead)
-        throw `cannot emulate V6 ahead sensors`
-      if (config.options) {
-        for (let key of ['behind', 'direct']) {
-          if (config.options[key])
-            throw `cannot emulate V6 '${key}' option`
-        }
-      }
-
-      super(config)
-    }
   }
   
   class V1 extends Vehicle {
