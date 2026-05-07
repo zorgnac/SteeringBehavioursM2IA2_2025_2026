@@ -5,6 +5,19 @@ class Boundary {
     this.b = createVector(x2, y2);
   }
 
+  toJSON() {
+    let json = {}
+    for (let k in this) {
+      if (k == "a" || k == "b") { // Problème avec la persistence p5 (référence circulaire)
+        let p = this[k]
+        json[k] = { x: p.x, y: p.y }
+        continue
+      }
+      json[k] = this[k]
+    }
+    return json
+  }
+
   reverse()
   {
     let p = this.a

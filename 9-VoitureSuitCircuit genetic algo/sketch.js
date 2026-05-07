@@ -75,9 +75,9 @@ UI.setup = function ()
     'Speed', [0, 12, 0], UI.onSpeedChange);
   UI.rateSlider = createSliderDiv(control,
     "Number of clock ticks in a user second",
-    'Rate', [0, def.RATES.length - 1, def.RATES.length - 1], UI.onRateChange);
-
-  let column
+    'Rate', [0, def.RATES.length - 1, def.RATES.length-1], UI.onRateChange);
+  
+  let column 
 
   column = createDiv();
   column.addClass('Column Left');
@@ -165,14 +165,14 @@ function preload()
 {
   let def = CONFIG.Sketch
   CONFIG.setup()
-  Asset.load(def.LOAD_TRACKS, world => Track.initials = world)
-  Asset.load(def.LOAD_GEN   , gen   => currentGen     = gen)
+  Asset.load(def.LOAD_TRACKS , world => Track.initials = world)
+  Asset.load(def.LOAD_KILLERS, world => Track.setKillers(world.tracks))
+  Asset.load(def.LOAD_GEN    , gen   => currentGen     = gen)
 }
 
 
 function setup() {
   let track
-  createCanvas(1200, 800);
 
   // tensor flow will work on the cpu
   tf.setBackend('cpu');
@@ -192,7 +192,7 @@ function setup() {
   raceInfo()
   let comment = createDiv()
   comment.class("Version")
-  comment.html("UI")
+  comment.html("Tueurs")
 }
 
 function raceInfo() {
@@ -300,6 +300,7 @@ function drawInfo(cycles, vehicle)
       track += ` ${currentTrack.comment}`
 
     let serial = currentGen.serial
+    let elders = `${stats.elders}`
 
     text('generation ', 10, y); text(serial                , 150, y); y+= 25;
     text('track      ', 10, y); text(track                 , 150, y); y+= 25;
@@ -307,6 +308,7 @@ function drawInfo(cycles, vehicle)
     text('speed      ', 10, y); text(cycles                , 150, y); y+= 25;
     text('store      ', 10, y); text(currentGen.countStored, 150, y); y+= 25;
 
+    text('elders     ', 10, y); text(elders   , 150, y); y+= 25;
     x = 200; y = 25
     let str = `${vehicle}`
     // QuickNDirty: ce bloc dépend de Vehicle.toString, et ce n'est pas une bonne
@@ -326,36 +328,65 @@ function drawInfo(cycles, vehicle)
   }
 }
 
+function onRunningException(x)
+{
+      let caught
+      if (x.message) {
+        if (x.type == UI)
+        {
+          UI.message(x.message)
+          caught = true
+        }
+        else {
+          UI.pause(x.message)
+          if (x.type && window[x.type]) {
+            window[x.type](x)
+            caught = true
+          }
+        }
+      }
+      else {
+        UI.pause(`unknown '${x}'`)
+      }
+      if (!caught) {
+        console.log(x)
+        throw x
+      }
+}
+
 // Appelée 60 fois / seconde
 function draw() {
-  let track = currentTrack
+  let vehicle
   const cycles = UI.speedSlider.value();
   background(0);
 
+  running: {
+    // On dessine le circuit
+    currentTrack.show()
 
-  // Par défaut le meilleur candidat est le premier de la population
-  let vehicle = currentGen.run(cycles)
-
+    // On simule quelques cycles de physique, et on récupère la voiture
+    // la plus intéressante.
+    try 
+    {
+      vehicle = currentGen.run(cycles);
+      
       // On répartit les voitures selon leur état (en course, dans le décor, ...)
-  currentGen.classifyRunning()
+      currentGen.classifyRunning();
 
-  // Si jamais on a plus de voitures, on passe à la génération suivante
-  if (!currentGen.countRunning) {
-    currentGen.classifyFinished()
-    if (!currentTrack.kills) {
-      currentTrack.kills = currentGen.countDeadQualifiedOrElders
+      // Si jamais on a plus de voitures en course, on passe à la course suivante (
+      // génération suivante, circuit suivant ou autre selon la logique mise en
+      // place dans 'nextRace')
+      // MB: ça me semble inutile, car on a déjà un test pour passer à la génération suivante
+      if (currentGen.countRunning == 0 && currentGen.started) {
+        nextRace()
+      }
     }
-    currentTrack = track = Track.next();
-    currentGen.classifyFinished()
-    currentGen = currentGen.next(track)
-    currentGen.prepare(track)
-    UI.genStats(currentGen.stats)
-  }
+    catch (x) { onRunningException(x) }
 
-  // On dessine le circuit
-  currentTrack.show()
-  // On dessine les voitures
-  currentGen.show(vehicle)
+    // On dessine le circuit
+    currentTrack.show()
+    // On dessine les voitures
+    currentGen.show(vehicle)
 
     // On montre le tableau de course de temps à autre
     if (vehicle && vehicle.event) { 
@@ -363,8 +394,10 @@ function draw() {
       raceInfo()
       // if (currentGen.active == 0) finishRunning()
     }
+  } // Fin du bloc 'running'
 
-  drawInfo(cycles, vehicle)
+  drawInfo(cycles, vehicle);
+
   // Le bouton 'Step', si enclenché, demande de mettre sur
   // pause après le premier appel à 'draw'. On réalise la pause
   // en mettant 'speed' à 0
@@ -373,4 +406,61 @@ function draw() {
     UI.speedSlider.value(0)
     if (UI.onStep) UI.onStep()
   }
+}
+
+function declareKiller()
+{
+  let def = Generation.config
+  if (currentTrack.declareKiller(currentGen)) {
+    console.log(`killer: ${currentTrack}`)
+    let kill = `${currentTrack.kills}-t${currentTrack.serial - Track.offset}`
+    let savedGen = `k${kill}.gen`;
+    let savedTrack = `k${kill}.track`;
+    saveGeneration(savedGen, ['dead']);
+    saveTrack(savedTrack)
+  }
+}
+
+function nextRace()
+{
+  if (!UI.speedSlider.value())
+    return
+
+  { // Cas standard : vraie course, générations...
+    let limit
+    let stored = currentGen.countStored;
+    const {FINISHED} = Generation.config
+
+    currentGen.classifyFinished();
+    if (!currentTrack.kills) {
+      currentTrack.kills = currentGen.countDeadOld
+    }
+
+    stored = currentGen.countStored;
+
+    // On rapporte à l'utilisateur si le circuit est tueur :
+    // un ancêtre ou un qualifié est mort
+    if (currentGen.countDead) {
+      declareKiller()
+    }
+ 
+    // On ne change de circuit que si le nombre minimal de voitures
+    // a terminé
+    if (stored >= currentGen.total || !FINISHED)     {
+      nextTrack(true);
+    }
+
+    // On prépare la nouvelle course, soit sur le même
+    // circuit avec une nouvelle génération, soit sur le
+    // nouveau circuit avec la génération en cours
+    currentGen = currentGen.next(currentTrack);
+
+    let stats = currentGen.prepare(currentTrack);
+    UI.genStats(stats);
+    raceInfo()
+  }
+
+  // console.log(UI.genCheck)
+  if (UI.genCheck.checked())
+    UI.speedSlider.value(0)
 }

@@ -16,6 +16,8 @@ function pointToLineDistance(p1, p2, x, y) {
 }
 
 class Vehicle {
+  static version = 0
+
   // Indices dans le tableau de sortie de la prédiction du cerveau
   static OUTPUT_DIR = 0
   static OUTPUT_MAG = 1
@@ -23,6 +25,9 @@ class Vehicle {
   static config = {
     /** Taux de remplacement sur mutation      */    MUTATION_RATE: 0.1, 
     /** Sévérité d'un remplacement sur mutation*/    MUTATION_TEMPERATURE: 1,
+
+    /** Erosion de beta sur mort       */ BETA_FACTOR_DEAD  : 1,
+    /** Erosion de beta sur héritage   */ BETA_FACTOR_INHERIT : 2/3,
 
     /** Délai d'abandon sur checkpoint 
      * 
@@ -45,6 +50,11 @@ class Vehicle {
      * La distance peut être négative. Avec -0.01, on
      * a le droit de mordre de 0.01 pixel sur le bord de 
      * piste                           */ SAFE            : 0           ,
+
+    /** Options (capteurs et cerveau) */
+    OPTIONS         : { 
+      /** Fonction d'activation                  */ 'activation': 'sigmoid'
+    }        ,
 }
 
   static serial = 0; // Numéro de série du dernier bolide
@@ -68,6 +78,13 @@ class Vehicle {
   /** Nombre de voitures arrivées dans la course en cours */
   static rank = 0 
 
+  /**
+   * Constructeur selon configuration 
+   * @param config - peut être :
+   *   - null, auquel cas les propriétés sont initialisées selon {@link Vehicle.config} 
+   *   - une autre voiture, auquel cas 
+   *   - un JSON
+   */
   constructor(config) {
     Vehicle.serial++;
     /** Numéro de série    @type Int    */    this.serial = Vehicle.serial;
@@ -76,21 +93,32 @@ class Vehicle {
     /** @type Vehicle.config */
     let def     = this.constructor.config
 
+    /** Limites physiques */
     this.limit = {
       speed     : def.MAX_SPEED,
       force     : def.MAX_FORCE, // 0.2;
       sight     : def.SIGHT,
       safe      : def.SAFE
     }
+    /** Points de championnat */ this.champion   = 0
   
     this.span         = def.VIEW_SPAN;
     this.angle        = def.ANGLE   ;
     this.hidden       = def.HIDDEN  ;
+    this.options      = def.OPTIONS ;
 
     /** Nombre de circuits terminés     */ this.old      = 0;
+    /** Température inverse de mutation */ this.beta     = 0;
 
     /** Statistiques de parcourt */
     this.stats   = { vel: {sum1: 0, sum2: 0, mean: 0, sigma: 0}, N: 0 }
+
+    /** Circuits (tueurs) passés 
+     * @type {Object}
+     *  
+     * - la clé est {@link Track.uuidLapped}  
+     */
+    this.passed  = { }
 
     /** Vitesse moyenne au dernier tour 
      * 
@@ -132,7 +160,7 @@ class Vehicle {
    * 
    * @param {Track} track - Le circuit 
    */
-  prepare(track) { 
+  prepare(track, alwaysRun) { 
     // Niveau d'adaptation (fitness).
     // Évalué en fin de course, puis réévalué (comme probabilité strictement positive) au changement de génération
     /** Niveau d'adaptation (mérite)         */ this.fitness = 0;
@@ -153,7 +181,14 @@ class Vehicle {
     /** Nombre de tours effectués          */ this.laps = 0;
 
     // Statistiques
-    {
+    let passed = alwaysRun ? null : this.hasPassed(track)
+    if (passed) {
+      this.stats = passed.stats
+      this.points = passed.points
+      this.speed = passed.speed
+      this.laps = track.laps;
+    }
+    else {
       let vel = this.stats.vel;
       vel.sum1 = 0
       vel.sum2 = 0
@@ -174,7 +209,10 @@ class Vehicle {
       this.seen.push(null);
     }
 
-    return true
+    this.active = !passed;
+    this.goal = null
+
+    return !passed
   }
 
   /**
@@ -201,8 +239,10 @@ class Vehicle {
       }
       this.span         = parent.span     ;
       this.angle        = parent.angle    ;
+      this.options      = parent.options
       
       this.hidden = parent.hidden
+      this.beta     = parent.beta*def.BETA_FACTOR_INHERIT      ;
     }
   }
 
@@ -253,6 +293,7 @@ class Vehicle {
     }
     return str
   }
+  /** Résumé sous forme clé/valeur */
   get cells() {
     let unit = this.speedUnit / 2.5
 
@@ -294,17 +335,22 @@ class Vehicle {
       "span", 
       "angle", 
       "old", 
+      "beta", 
       "hidden",
       "uuid", 
       "dead",
       "limit",
+      "options", 
     ]
     set_if(["name", "champion"])
     set_always(keys)
     
+    set_if([ "parentUuid", "qualified" ])
 
     if (this.brain)
       json.brain = this.brain.toJSON();
+
+    set_always(["passed"])
 
     return json
   }
@@ -334,8 +380,18 @@ class Vehicle {
   fromJSON(json) {
     for (let k in json)
     {
-      this.constructor.merge(k, this, json);
+      switch (k) {
+        case "channels": // Certains champs doivent être pris tels quels
+        case "options":
+          this[k] = json[k];
+          break
+        default:
+          this.constructor.merge(k, this, json);
+      }
     }
+
+    if (!this.beta) 
+      this.beta = this.old;
 
     if (json.brain) {
       this.brain        = new NeuralNetwork(json.brain);
@@ -346,6 +402,45 @@ class Vehicle {
       this.makeBrain()
   }
 
+  /** 
+   * @param {Track} track
+  */
+  hasPassed(track, value)
+  {
+    let undef
+    if (!track) track = this.track
+    
+    let key = track.uuidLapped
+    if (value == false)
+      delete this.passed[key]
+
+    if (value) {
+      let src = this.stats.vel
+      this.passed[key] = {
+        stats : {
+          vel: {
+            mean:src.mean,
+            var: src.var,
+            sigma: src.sigma,
+            max: src.max
+          }
+        },
+        points: this.points,
+        speed : this.speed
+      }
+    }
+
+    return this.passed[key]
+  }
+  hasPassedAll(tracks) {
+    if (!tracks) tracks = Track.killers
+    for (let track of tracks) {
+      if (!this.hasPassed(track))
+        return false
+    }
+
+    return true
+  }
 
   applyBehaviors(walls) {
     // On appelle le comportement look
@@ -509,6 +604,7 @@ class Vehicle {
 
     this.event = reason;
     this.dead  = reason;
+    this.beta *= def.BETA_FACTOR_DEAD
   }
   
   /** Calcul de 'fitness' */
@@ -655,8 +751,8 @@ class Vehicle {
     }
   }
 
-  // Met en surbrillance la voiture
-  highlight() {
+    /** Met en surbrillance la voiture */
+  highlight(config) {
     push();
     translate(this.pos.x, this.pos.y);
     const heading = this.vel.heading();

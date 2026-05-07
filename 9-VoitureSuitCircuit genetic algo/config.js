@@ -50,6 +50,7 @@ const CONFIG = {
     Sketch: {
         /** Génération prédéfinie           @type {string|string[]} */ LOAD_GEN    : null,
         /** Monde de circuits prédéfinis    @type {string|string[]} */ LOAD_TRACKS : null,
+        /** Monde de circuits tueurs        @type {string|string[]} */ LOAD_KILLERS: null,
 
         // État initial de l'interface utilisateur
         /** Étages d'ascenseur   @type {int[]}  */ RATES       : null,
@@ -76,6 +77,9 @@ const CONFIG = {
         ]
 
     def.LOAD_TRACKS = [
+        // 'initialTracks'
+    ]
+    def.LOAD_KILLERS = [
 //         'initialTracks'
     ]
     def.RATES = [0, 0.1, 0.5, 1, 2, 4, 8, 12, 16, 24];
@@ -87,6 +91,7 @@ CONFIG.Vehicle = function () {
     // les instances
     let def = Vehicle.config
     // def = CONFIG.Vehicle;
+    def.LIFESPAN = 150
     
     return CONFIG.Vehicle
 }
@@ -96,7 +101,7 @@ CONFIG.Vehicle = function () {
 CONFIG.Track = function () {
     let def = Track.config;
 
-    def.TRICKY = 6.5; 3;
+    def.TRICKY = 1; 6.5; 
     def.LAPS = 2;
 
     return CONFIG.Track

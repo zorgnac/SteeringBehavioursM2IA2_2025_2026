@@ -139,6 +139,8 @@ class Generation {
    * @property     {Int} olds     Nombre total d'anciens 
    * @property     {Int} news     Nombre de nouveaux     
    * @property {Vehicle} oldest   La plus vieille        
+   * @property {Vehicle} youngest La plus jeune          
+   * @property {Int}     elders   Nombre de vétérans (tous tests passés)
    */
 
   /**
@@ -166,6 +168,13 @@ class Generation {
 
     let update = (vehicle) => {
       if (vehicle.old) olds++; else news++;
+      if (vehicle.hasPassedAll()) {
+        vehicle.elder = true
+        elders++;
+      }
+      else
+        vehicle.elder = false
+
       if (!oldest || oldest.old < vehicle.old)
         oldest = vehicle;
 
@@ -200,7 +209,7 @@ class Generation {
     this.lists.running  = running;
     
     let message = `${Generation.time()} ${track.id}: run=${running.length}`
-    if (olds) message += `, ${olds} olds; ${youngest.id} → ${oldest.id}`
+    if (olds) message += `, ${olds}(${elders}) olds; ${youngest.id} → ${oldest.id}`
     console.log(message)
 
     Vehicle.rank = 0; // Nombre de voitures ayant terminé
@@ -212,6 +221,7 @@ class Generation {
       news: news,
       oldest: oldest, 
       youngest: youngest, 
+      elders: elders, 
     }
 
     return this.stats
@@ -281,6 +291,10 @@ class Generation {
 
     let byUUID = (a,b) => a.uuid.localeCompare(b.uuid)
 
+    if (keys == 'passed') {
+      keys = ['stored', 'finished' ]// Object.keys(gen.lists)
+      keys.push('passed')
+    }
     if (!keys) keys = Object.keys(gen.lists);
 
     for (let key of keys)
@@ -294,6 +308,16 @@ class Generation {
         // vehicle.passed
         vehicles.push(vehicle.toJSON())
       }
+    }
+    if (keys.includes('passed')) {
+      let passed = []
+
+      for (let vehicle of vehicles) {
+        if (vehicle.hasPassedAll())
+          passed.push(vehicle)
+      }
+
+      vehicles = passed
     }
     vehicles.sort(byUUID)
     // json.type = "Generation";
@@ -451,6 +475,14 @@ class Generation {
     return vehicles
   }
 
+  declareKiller(track)
+  {
+    for (let vehicle of this.lists.stored) {
+      if (vehicle.track == track && vehicle.finished)
+        vehicle.hasPassed(track, true);
+    }
+  }
+
 
   // On range les voitures qui ne sont plus en course entre 
   // les listes 'finished' et 'dead'
@@ -469,7 +501,19 @@ class Generation {
       if (vehicle.finished) {
         let track = vehicle.track
         running.splice(i, 1);
-        vehicle.old ++;
+        old:
+        if (vehicle.lastTrack != vehicle.track ||
+            (track.killer && !vehicle.hasPassed()))
+        {
+          vehicle.lastTrack = track
+          if (track.killer) {
+            if (vehicle.hasPassed(track)) break old;
+
+            vehicle.hasPassed(track, true);
+          }
+          vehicle.old ++;
+          vehicle.beta++;
+        }
         finished.push(vehicle);
       }
       if (vehicle.dead) {
@@ -541,11 +585,55 @@ class Generation {
     return best
   }
 
+  /**
+    Trie les voitures du garage selon le fait 
+    qu'elles ont déjà réussi le circuit ou non.
+    Celles qui on passé se retrouvent en tête
+    de liste.
+
+    La valeur de retour est le nombre de ces voitures
+  */
+  sortStoreByPassed(track)
+  {
+    let count = 0
+    let stored = this.lists.stored
+    let broom = Generation.broom
+    let oldest = 0
+
+    for (let vehicle of stored)
+    {
+      if (vehicle.old > oldest) oldest = vehicle.old
+      if (
+        vehicle.hasPassed(track) &&
+        vehicle != broom
+        // || vehicle.lastTrack == track // TODO: Problème quand le circuit n'est pas tueur
+      )
+      {
+        vehicle.passed[null] = 2
+        // vehicle.finished = -1
+        count ++
+      }
+      else if (vehicle == broom)
+        vehicle.passed[null] = 1
+      else
+        vehicle.passed[null] = 0
+    }
+
+    // Parmi les voitures qui n'ont pas passé, on privilégie les anciennes.
+    // dans le cadre d'une campagne de test de résilience, cela garantit
+
+    let byPassed = (b,a) => a.passed[null]-b.passed[null]
+    stored.sort(byPassed)
+
+    return count
+  }
+
   next(track) {
     let def = this.constructor.config
     let r = this;
     let lists  = this.lists
     let {stored} = lists
+    let elders // = this.elders
 
     if (!track) 
       throw 'argument track is mandatory';
@@ -553,10 +641,22 @@ class Generation {
     if (this.status != Generation.STATUS_FINISHED)
       throw new Exception('Generation is not completed')
 
+    elders = this.sortStoreByPassed(track)
+
     running:
     {
-      lists.running = stored
-      lists.stored = []
+      if (stored.length >= this.total)
+      {
+        let total = this.total
+        let olds = stored.length
+
+        lists.running = stored.splice(0, this.total + elders)
+        lists.dead    = []
+
+        break running
+      }
+
+      lists.running = stored.splice(elders)
       r = new Generation(this, true);
     } // bloc 'running'
 

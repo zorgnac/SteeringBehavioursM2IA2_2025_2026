@@ -454,7 +454,63 @@ class Track {
     
     this.computeStartAndLength()
   }
+  static setKillers(list)
+  {
+    let i = 0;
+    let killers = []
 
+    let acceptTrack = (track) => {
+      track.killer = true
+      track.name = `killer${i++}`
+      killers.push(track)
+    }
+    list.forEach(acceptTrack)
+    Track.killers = killers;
+    Track.offset  = killers.length;
+  }
+
+  // Compte les voitures ayant passé le circuit
+  countPassed(vehicles) {
+    let count = 0;
+    let lists = vehicles
+    
+    if (Array.isArray(vehicles))
+      lists = { finished: vehicles, stored: [], running: [] }
+
+    if (vehicles instanceof Generation)
+      lists = vehicles.lists
+
+    for (let k of ["finished", "stored", "running"])
+      for (let vehicle of lists[k]){
+        if (vehicle.hasPassed(this))
+          count++;
+      }
+    return count;
+  }
+  get uuidLapped() {
+    return `${this.uuid}.${this.laps}`
+  }
+  // Cherche un circuit parmi les tueurs
+  static find(id) {
+    let i = Track.indexOf(id)
+    let track = i >= 0 ? Track.killers[i] : null
+    return track
+  }
+  static indexOf(id) {
+    let found = -1;
+    
+    for (let i in Track.killers)
+    {
+      let track = Track.killers[i]
+      if (track.serial == id || track.name == id || track.uuid == id)
+      {
+        found = int(i)
+        break
+      }
+    }
+
+    return found
+  }
   /** Dessine le circuit sur le canvas de P5 */
   show() {
     // On dessine les checkpoints du circuit
@@ -477,6 +533,21 @@ class Track {
     for (let wall of this.walls) {
       wall.show();
     }
+  }
+
+  declareKiller(gen) {
+    let known = true;
+    if (!this.killer) {
+      this.killer = true;
+      known       = false;
+      if (!this.name)
+        this.name   = `killer${Track.killers.length}`
+      Track.killers.push(this);
+
+      if (gen) 
+        gen.declareKiller(this)
+    }
+    return !known;
   }
 
   static next() {
