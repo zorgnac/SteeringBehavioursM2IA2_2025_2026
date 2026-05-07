@@ -48,6 +48,23 @@ class Vehicle {
 }
 
   static serial = 0; // Numéro de série du dernier bolide
+  // Fonctions de comparaison pour sort()
+  static byRank = (a,b) => {
+    if (a.finished && b.finished) {
+      if (a.finished != b.finished)
+        return a.finished - b.finished
+    }
+    return b.fitness - a.fitness
+  }
+  /**
+   * 
+   * @param {Vehicle} a 
+   * @param {Vehicle} b 
+   * @returns 
+   */
+  static byPoints = (a, b) => {
+    return b.points - a.points
+  }
   /** Nombre de voitures arrivées dans la course en cours */
   static rank = 0 
 
@@ -196,6 +213,13 @@ class Vehicle {
     this.brain.dispose();
   }
 
+  // Étiquettes de colonne pour 'cells' ci-dessous
+  static cells = [ "n", "laps", 
+    // "fit", 
+    "id", "stats", 
+    "avg"
+  ];
+
   get id() {
     let id = `${this.serial}(${this.old}${this.parent != null ? "#" + this.parent : ""})`
     if (this.name)
@@ -229,7 +253,28 @@ class Vehicle {
     }
     return str
   }
+  get cells() {
+    let unit = this.speedUnit / 2.5
 
+    let vm = round(this.stats.vel.mean * 100 * unit, 0)
+    let vs = round(this.stats.vel.sigma * 100 * unit, 0)
+    let vl = round(this.stats.vel.max * 100 * unit, 0)
+
+    let cells = {
+      attributes: {
+        "class": this.old ? "Old" : "New",
+        "serial": this.serial
+      }
+    }
+    if (this.finished) cells.n     = this.finished
+    if (this.laps    ) cells.laps  = this.laps
+    if (this.laps    ) cells.avg   = round(this.speed, 2)
+    cells.id    = this.id
+    cells.stats = `${vm}%±${vs}`
+    cells.max   = vl
+
+    return cells
+  }
   toJSON() {
     let json = {};
 
