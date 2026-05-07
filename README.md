@@ -1,8 +1,8 @@
-# Zorgnac
+# Branche Zorgnac
 
 Cette branche ne s'intéresse qu'au chapitre 9, qui montre
 des générations de voitures confrontées à des circuits 
-hazardeux.
+hasardeux.
 
 Une question se pose dans ce contexte, dès lors qu'on
 identifie un peu trop sérieusement la chose à une situation réelle :
@@ -20,13 +20,13 @@ Il y a deux axes de développement :
   en course les voitures qui ont réussi jusqu'à présent (les
   vieux)
   
-- s'il s'avère qu'on arrive pas (en temps raisonable)
-  à ateindre un prémisse de résilience, il faut
+- s'il s'avère qu'on arrive pas (en temps raisonnable)
+  à atteindre un prémisse de résilience, il faut
   se demander si c'est dû à la méthode, ou s'il
   faut remettre en cause les capteurs ou la topologie des
   cerveaux
   
 Le code présenté ici propose un protocole tel que
 décrit ci-dessus, implémente de nouveaux capteurs, et
-autorise une configuration plus poussée des réseux de
+autorise une configuration plus poussée des réseaux de
 neurones.
