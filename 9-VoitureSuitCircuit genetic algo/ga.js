@@ -63,6 +63,34 @@ class Generation {
     /** Nombre nominal de voitures à mettre en course */
     TOTAL: 30,
 
+    /** Voiture-balai
+     * 
+     * @type {String}
+     * 
+     * La voiture-balai est une voiture qui incarne la vitesse minimale acceptable.
+     * Quand la voiture-balai passe la ligne d'arrivée, toutes les
+     * voitures encore en course sont assassinées.
+     * 
+     * La valeur est une chaîne de caractères, qui nomme la
+     * voiture dans la génération.
+     * 
+     * On renseigne typiquement cette configuration quand on cherche
+     * à augmenter la performance d'une génération qui a déjà fait
+     * ses preuves :
+     * - on extrait la meilleure voiture
+     * - on la met toute seule dans un JSON de génération, en
+     *   ajustant sa propriété {@link Vehicle.beta}, et en déclarant le
+     *   total de voitures souhaitées
+     * - on configure sketch pour lancer cette génération (à une voiture) sur
+     *   une liste de circuits tueurs 
+     */
+    BROOM:null,
+
+    /** Pas de nouvelle voiture
+     * 
+     * Utilisé dans un test de résilience pure, où
+     * ne peut qu'éliminer des voitures */ FROZEN: false,
+
     // Les entrées suivantes ne sont pas directement utilisées par Generation,
     // mais par la logique de course implémentée par sketch.js. On les documente
     // ici par soucis de rangement
@@ -76,6 +104,8 @@ class Generation {
     /** Nombre de voitures devant terminer pour passer à la course suivante */
     FINISHED: true
   }
+
+  /** Instance de {@link Generation.config.BROOM} @type Vehicle */  static broom;
 
   /**
    * Si donné, CONFIG est soit une génération, qui sera le parent, soit
@@ -131,6 +161,39 @@ class Generation {
       this.inherit(lists, keep);
   }
 
+  /**
+   * Ajoute la voiture-balai à la course si requit
+   */
+  checkBroom(track) {
+    let def = Generation.config
+    let broom = Generation.broom
+
+    if (broom) {
+      delete broom.onFinished.broom
+      delete broom.alwaysRun
+      delete Generation.broom
+    }
+
+    broom: {
+      if (!def.BROOM)  break broom
+      
+      broom = Generation.broom = this.find(def.BROOM)
+      if (!broom) break broom
+      if (broom.dead) break broom
+
+      broom.alwaysRun = true
+      if (!broom.onFinished) broom.onFinished = {}
+      broom.onFinished.broom = (v) => this.killRunning(v)
+
+      if (broom.origin.list == 'running') break broom
+      if (!this.lists.running.length) break broom
+
+      this.lists[broom.origin.list].splice(broom.origin.index, 1)
+      this.lists.running.push(broom)
+      broom.prepare(track, true)
+    }
+  }
+
   /** Représentation externe d'une heure (HH:MM:SS) */
   static time(time)
   {
@@ -141,6 +204,22 @@ class Generation {
   static duration(start, stop) {
     let duration = new Date(stop.getTime() - start.getTime())
     return duration.toUTCString().replace(/.*(..:..:..).*/, "$1")
+  }
+
+  /** Assassine toutes les voitures en course (sauf l'assassin) */
+  killRunning(killer) {
+    let count = 0
+    /** @type {Vehicle} */ let vehicle
+    
+    for (vehicle of this.lists.running)
+    {
+      if (vehicle != killer) {
+        vehicle.kill('slow')
+        count++
+      }
+    }
+    if (count)
+      console.log(`killed ${count} (slow) vehicles`)
   }
 
   /** Statistiques de génération
@@ -200,7 +279,7 @@ class Generation {
     {
       for (let vehicle of list) {
         update(vehicle)
-        if (vehicle.prepare(track)) {
+        if (vehicle.prepare(track, vehicle.alwaysRun)) {
           running.push(vehicle)
         }
         else {
@@ -221,6 +300,7 @@ class Generation {
     }
 
     this.lists.running  = running;
+    this.checkBroom(track)
     
     let message = `${Generation.time()} ${track.id}: run=${running.length}`
     if (track.crashKills) message += ` k=${track.crashKills}`
@@ -267,6 +347,8 @@ class Generation {
       json = array[0]
       if (running.length < this.total) this.total = running.length
       if (json.total) this.total = json.total
+      if (json.voi)   Vehicle.config.OF_INTEREST = json.voi
+      if (json.broom) Generation.config.BROOM = json.broom
     }
   }
   populate(vehicles) {
@@ -364,7 +446,7 @@ class Generation {
       }
     }
     // Pour les autres, on change de génération
-    {
+    if (!Generation.config.FROZEN) {
       for (; i < this.total; i++)
       {
         // Pour la mutation, on choisit un parent au hasard
@@ -625,7 +707,7 @@ class Generation {
     /*
     On incrémente beta pour toutes les voitures qui ont
     passé le circuit. Cela vaut en particulier pour celles
-    qui étaient au garage, et n'ont par conséquent pas
+    d'entre elles qui étaient au garage, et n'ont par conséquent pas
     couru une nouvelle fois. Plus on peine à atteindre
     le quota de succès pour un circuit, plus les vétérans 
     doivent montrer l'exemple
@@ -633,7 +715,7 @@ class Generation {
     if (stored.length < this.total && this.started)
     {
       for (let vehicle of stored)
-        if (vehicle.hasPassed(this.started))
+        if (vehicle.hasPassed(this.started) && !vehicle.alwaysRun)
           vehicle.beta += 1
     }
 
@@ -744,8 +826,16 @@ class Generation {
 
     running:
     {
-      if (stored.length >= this.total)
+      let total = this.total
+      let frozen = Generation.config.FROZEN
+      if (frozen) {
+        total = stored.length
+        this.minRunning = 0
+      }
+
+      if (stored.length >= total)
       {
+        lists.dead    = []
         if (runAll) {
           lists.running = lists.stored
           lists.stored = []
@@ -753,7 +843,6 @@ class Generation {
         else
           lists.running = stored.splice(0, this.total + elders)
 
-        lists.dead    = []
 
         break running
       }
@@ -902,8 +991,8 @@ class Generation {
    *   - la première voiture trouvée sinon
    * 
    * Chaque voiture retournée possède
-   * une propriété `origin` qui indique dans quelle liste
-   * elle a été trouvée
+   * une propriété `origin` qui indique par un objet `{list,index}` dans quelle liste
+   * elle a été trouvée et à quel indice
   */
   find(id) {
     let lists = this.lists
@@ -913,9 +1002,10 @@ class Generation {
     found:
     if (re) {
       for (let k of Object.keys(lists)) {
-        for (let vehicle of lists[k]) {
+        for (let i in lists[k]) {
+          let vehicle = lists[k][i]
           if ((vehicle.name && vehicle.name.match(id)) || vehicle.uuid.match(id)) {
-            vehicle.origin = k
+            vehicle.origin = { list: k, index: int(i) }
             if (!found) found = []
             found.push (vehicle)
           }
@@ -924,10 +1014,11 @@ class Generation {
     }
     else
       for (let k of Object.keys(lists)) {
-        for (let vehicle of lists[k]) {
+        for (let i in lists[k]) {
+          let vehicle = lists[k][i]
           if (vehicle.serial == id || vehicle.name == id || vehicle.uuid == id)
           {
-            vehicle.origin = k
+            vehicle.origin = { list: k, index: int(i) }
             found = vehicle
             break found
           }
@@ -949,12 +1040,11 @@ class Generation {
    *   de FOCUS
    * 
    * @param {?Vehicle} focus 
-   * @param {?Int|String|RegExp|Vehicle} interest 
-   * - Identifie, autre directement comme Vehicle, par le numéro de série, 
-   *   le nom ou l'identifiant unique (uuid)
+   * @param {?Int|String|RegExp|Vehicle} interest Vehicle, numéro de série, nom ou uuid
   */
   show(focus, interest) {
     let running  = this.lists.running
+    let voi = null
 
     for (let vehicle of running) {
       vehicle.show();
@@ -970,6 +1060,10 @@ class Generation {
           if (vehicle.name.match(interest))            break yes
 
           break no
+        }
+        if (!voi && Vehicle.config.FOCUS_VOI) {
+          voi = vehicle
+          focus = voi
         }
         vehicle.highlight({ fill: "yellow", "no-ray": 1 })
       }

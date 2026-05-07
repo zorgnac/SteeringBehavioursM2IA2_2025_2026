@@ -48,6 +48,8 @@ let UI = {
   genCheck   : null, // pause sur changement de generation
   purgeCheck : null,
   testCheck  : null, 
+  killerCheck: null,
+
   /** @type CanvasRenderingContext2D */ board: null,
 
   get status() {
@@ -58,6 +60,7 @@ let UI = {
       "pause": UI.genCheck.checked(),
       "step" : UI.stepButton.value(),
       "purge": UI.purgeCheck.checked(),
+      "killer": UI.killerCheck.checked(),
     }
   }
 };
@@ -108,6 +111,9 @@ UI.setup = function ()
   UI.genCheck = createCheckDiv(column,
     "Pause before starting next race",
     "Pause", "gencheck");
+  UI.killerCheck = createCheckDiv(column,
+    `Pause when an automated killer test is done`,
+    "Killer", "killerCheck");
 
   column = createDiv();
   column.addClass('Column Left');
@@ -117,7 +123,7 @@ UI.setup = function ()
     `Loop on killer tracks`,
     "Test", "testCheck");
   UI.purgeCheck = createCheckDiv(column,
-    "Put all vehicles on track. Once done keep the TOTAL best",
+    "Put all vehicles on track. Once done keep the TOTAL best. Not applicable when test is ongoing",
     'Purge', "purgeCheck")
 
   div = createDiv()
@@ -147,6 +153,7 @@ UI.setup = function ()
   UI.board = black.elt.getContext("2d")
 
   UI.purgeCheck .checked(def.CHECK_PURGE)
+  UI.killerCheck.checked(def.CHECK_KILLER)
   UI.testCheck .checked(def.LOAD_KILLERS ? def.CHECK_TEST : false )
   UI.onRateChange()
 
@@ -267,12 +274,13 @@ function setup() {
   UI.pause(UI.lastMessage)
   let comment = createDiv()
   comment.class("Version")
-  comment.html("Config")
+  comment.html("broom")
 }
 
 function onTestDone(message) {
+  let {killer} = UI.status
   let test = UI.testCheck
-  if (test.checked() && (test.value() != 'auto'))
+  if (test.checked() && (test.value() != 'auto' || killer))
     UI.pause(message);
 
   test.checked(false);

@@ -109,7 +109,7 @@ class Vehicle {
     // Constantes de calcul de fitness
     /** Poids de la vitesse au tour */ WEIGHT_SPEED    : 1           ,
 
-    /** Nom de la voiture d'intérêt         */ OF_INTEREST  : 'voi',
+    /** Nom de la voiture d'intérêt         */ OF_INTEREST  : 'broom',
     /** Voir {@link Generation.show}        */ FOCUS_VOI    : true
 }
 
@@ -133,6 +133,11 @@ class Vehicle {
   }
   /** Nombre de voitures arrivées dans la course en cours */
   static rank = 0 
+
+  /** Action déclenchée quand la voiture termine un circuit 
+   * @type {(v:Vehicle)=>null}
+  */
+  onFinished;
 
   /**
    * Constructeur selon configuration 
@@ -680,8 +685,12 @@ class Vehicle {
       if (Vehicle.rank <= 10)
         this.champion += 1 / Vehicle.rank
 
-      if (Vehicle.onFinished) Vehicle.onFinished(this)
-      if (this.onFinished) this.onFinished(this)
+      if (Vehicle.onFinished) {
+        for (let k in Vehicle.onFinished) Vehicle.onFinished(this)
+      }
+      if (this.onFinished) {
+        for (let k in this.onFinished) {this.onFinished[k](this)}
+      }
     }
   }
 
@@ -1019,11 +1028,30 @@ class Vehicle {
       for (let i in this.rays) {
         let ray = this.rays[i];
         let point = this.seen[i];
-        // console.log(`seen ${point}`);
         ray.show(point, sight);
         if (direct && point)
           this.showArrow(point, direct[i].point)
       }
+
+      // Vecteur vitesse et accélération
+      push();
+      translate(this.pos.x, this.pos.y);
+      const mag = 7;
+      let max = this.vel.copy()
+
+      max.setMag(this.speedUnit * mag);
+
+      strokeWeight(2);
+      stroke(255, 0, 0, 100);
+      line(0, 0, max.x, max.y);
+
+      stroke(255, 0, 0, 255);
+      line(0, 0, 3 * mag * this.vel.x, 3 * mag * this.vel.y);
+
+      stroke(255, 255, 0);
+      const {MAX_FORCE} = Vehicle.config
+      line(0, 0, mag * this.acc.x / MAX_FORCE, mag * this.acc.y / MAX_FORCE);
+      pop();
     }
     if (this.goal) {
       this.goal.show();
@@ -1104,7 +1132,8 @@ class Vehicle {
    * 
    * L'usage principal est de récupérer des JSON de
    * vielles voitures et de restituer leur comportement
-   * avec le code à jour
+   * avec le code à jour. On peut composer des générations
+   * avec des voitures de versions différentes 
    */
   static Version = null
 
@@ -1115,6 +1144,9 @@ class Vehicle {
 }
 
 Vehicle.Version = (function() {
+  class V6 extends Vehicle {
+    static version = 6
+  }
   class V1 extends Vehicle {
     static version = 1
 
@@ -1142,7 +1174,7 @@ Vehicle.Version = (function() {
   }
 
   let versions = {}
-  for (let model of [V1]) {
+  for (let model of [V1, V6]) {
     versions[model.version] = model
   }
 

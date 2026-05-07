@@ -56,6 +56,7 @@ let CONFIG = {
 
         // État initial de l'interface utilisateur
         /** Case Test cochée     @type boolean  */ CHECK_TEST  : null,
+        /** Case Killer cochée   @type boolean  */ CHECK_KILLER: null,
         /** Case Purge cochée    @type boolean  */ CHECK_PURGE : null,
         /** Étages d'ascenseur   @type {int[]}  */ RATES       : null,
     }, 
@@ -77,13 +78,16 @@ CONFIG = new Asset(CONFIG)
 {
     let def = CONFIG.Sketch
 
-    def.LOAD_CONFIG = 'config/miage-0'
+    // def.LOAD_CONFIG = 'config/miage-0'
+    def.LOAD_CONFIG = 'config/broom'
 
     def.LOAD_GEN = [
         'car-simple-1',
         // 'gen-h9x6c1-2',
         // 'gen-sym-dir-1',
         // 'seed-v1'
+        // 'seed-c',
+        // 'gen173'
     ]
 
     def.LOAD_TRACKS = [
@@ -91,13 +95,13 @@ CONFIG = new Asset(CONFIG)
     ]
     def.LOAD_KILLERS = [
         'trk-simple-1',
-        // 'killerTracks',
+        // 'killerTracks/standard',
         //  'initialTracks',
     ]
 
     def.CHECK_TEST = true
     // def.CHECK_PURGE = true
-    def.RATES = [0, 0.1, 0.5, 1, 2, 4, 8, 12, 16, 24];
+    def.RATES = [0, 1, 2, 5, 10, 15, 20, 30];
 }
 
 // ----------------------------------------------------
@@ -116,7 +120,7 @@ CONFIG.Vehicle = function () {
 CONFIG.Track = function () {
     let def = Track.config;
 
-    def.TRICKY = 3; 6.5; 
+    def.TRICKY = 6.5; 3; 
     def.LAPS = 2;
 
     return CONFIG.Track
@@ -127,7 +131,8 @@ CONFIG.Generation = function() {
     let def = Generation.config
 
     def.TOTAL = 30; 1;
-    def.FINISHED = def.TOTAL;
+    def.FINISHED = true;
+    def.BROOM = 'broom' // On tue systématiquement les voitures plus lentes que celle-ci
 
     return CONFIG.Generation
 }

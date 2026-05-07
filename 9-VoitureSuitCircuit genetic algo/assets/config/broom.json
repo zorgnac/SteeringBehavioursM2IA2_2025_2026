@@ -1,0 +1,14 @@
+{
+  "config": "Exemple de voiture-balai",
+  
+  "Sketch": {
+    "LOAD_GEN": "car-simple-1"
+  },
+  "Generation": {
+    "BROOM": "h9x6c1-f1"
+  },
+  "Vehicle": {
+    "OF_INTEREST": "h9x6c1-f1"
+  }
+}
+  
