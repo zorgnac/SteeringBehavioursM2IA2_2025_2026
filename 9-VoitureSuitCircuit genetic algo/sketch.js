@@ -19,28 +19,45 @@ CONFIG.setup = () => {
   for (let k in def) {
     Generation.config[k] = def[k]
   }
+  def = CONFIG.Test
+  def()
+  for (let k in def) {
+    Test.config[k] = def[k]
+  }
 
   def = CONFIG.Sketch
   // def()
 }
 
-/** Circuit en cours    @type {Track}      */let currentTrack;
-/** Generation en cours @type {Generation} */let currentGen;
+/** Circuit en cours      @type {Track}      */let currentTrack;
+/** Generation en cours   @type {Generation} */let currentGen;
+/** Validation sur tueurs @type {Test}       */let killerTest
 
 // Elements utilisateur 
 let UI = {
   messageDiv : null,
+
   speedSlider: null,
   rateSlider : null,
+
   trackButton: null,
   saveButton : null,
   killButton : null,
   stepButton : null,
+
   genCheck   : null, // pause sur changement de generation
-  // singleCheck: null, // ne garder qu'une seule voiture en course
-  purgeCheck : null,
-  killerCheck: null,  // pause quand une génération fini par réussir un circuit tueur
-  /** @type CanvasRenderingContext2D */ board: null
+  testCheck  : null, 
+  /** @type CanvasRenderingContext2D */ board: null,
+
+  get status() {
+    return {
+      "test": this.testCheck.checked(),
+      "cycles": this.speedSlider.value(),
+      "rate": CONFIG.Sketch.RATES[this.rateSlider.value()],
+      "pause": UI.genCheck.checked(),
+      "step" : UI.stepButton.value()
+    }
+  }
 };
 
 UI.setup = function ()
@@ -61,6 +78,10 @@ UI.setup = function ()
   UI.raceTable.addClass('Race')
   UI.raceTable.attribute("onclick", "onRaceClick(event)")
   UI.raceTable.clear()
+
+  UI.testTable = createDiv()
+  UI.testTable.parent(right)
+  UI.testTable.addClass('Test')
 
   UI.messageDiv = createDiv();
   UI.messageDiv.addClass('Message');
@@ -90,6 +111,10 @@ UI.setup = function ()
   column.addClass('Column Left');
   column.parent(control);
 
+  UI.testCheck = createCheckDiv(column,
+    `Loop on killer tracks`,
+    "Test", "testCheck");
+
   div = createDiv()
   div.addClass('Actions');
 
@@ -116,6 +141,7 @@ UI.setup = function ()
   black.attribute("height", 400)
   UI.board = black.elt.getContext("2d")
 
+  UI.testCheck .checked(def.LOAD_KILLERS ? def.CHECK_TEST : false )
   UI.onRateChange()
 }
 
@@ -180,19 +206,43 @@ function setup() {
   // On met l'interface en place
   UI.setup()
 
-  nextTrack(true)
-  track = currentTrack
+  killerTest = new Test()
+  killerTest.onNext = (next) => UI.testTable.html(killerTest.htmlInfo(next))
+  killerTest.onDone = onTestDone
 
   // On crée les véhicules....
   if (!currentGen)
     currentGen = new Generation()
+
+  // On crée un circuit...
+  nextTrack(true)
+  track = currentTrack
+
+  // On met les voitures sur la ligne de départ
   currentGen.prepare(track)
   UI.genStats(currentGen.stats);
+
+  killerTest.init(currentGen.lists.running)
 
   raceInfo()
   let comment = createDiv()
   comment.class("Version")
-  comment.html("Tueurs")
+  comment.html("Symétrie")
+}
+
+function onTestDone(message) {
+  let test = UI.testCheck
+  if (test.checked() && (test.value() != 'auto'))
+    UI.pause(message);
+
+  test.checked(false);
+  test.value('on')
+}
+function onTestKillerClick(name)
+{
+  if (!UI.speedSlider.value()) {
+    selectKiller(name)
+  }
 }
 
 function raceInfo() {
@@ -206,7 +256,7 @@ function raceInfo() {
   let i = 0
   for (let list of [lists.finished, lists.running]) {
     for (let vehicle of list) {
-//      if (!vehicle.active) continue
+      if (!vehicle.active) continue
       if (!table.set(i, vehicle.cells))
         break
       i++
@@ -223,6 +273,14 @@ function nextTrack(noprepare)
 {
   let next
   track: {
+    const {test} = UI.status
+    if (test) {
+      next = killerTest.next()
+      if (next) break track;
+      console.log('nothing to test. unchecking Test')
+      UI.testCheck.checked(false)
+    }
+
     next = Track.next()
   } // track
 
@@ -231,6 +289,28 @@ function nextTrack(noprepare)
   if (!noprepare) {
     currentStats = currentGen.prepare(currentTrack)
   }
+}
+
+// Sélectionne le i-ième circuit tueur
+function selectKiller(i) {
+  const {test} = UI.status
+  let killers = Track.killers
+  if (test && killerTest.killers)
+    killers = killerTest.killers
+
+  if (!i) i = 0;
+  if (i < 0) i = killers.length+i;
+  if (i < 0 || i >= killers.length)
+    throw `out of range (length=${killers.length})`
+
+  let track = typeof i == "string" ? Track.find(i) : killers[i];
+  if (track) {
+    currentTrack = track
+    currentStats = currentGen.prepare(currentTrack);
+    UI.testTable.html(killerTest.htmlInfo())
+  }
+  else
+    console.log(`no such killer '${i}'`)
 }
 
 // Enclenche une pause après le prochain tick d'horloge
@@ -286,11 +366,22 @@ function drawInfo(cycles, vehicle)
     text(300, 25, "Generation is not ready");
 
   else {
+    const {test} = UI.status
+
     let def = CONFIG.Sketch
     const rate = def.RATES[UI.rateSlider.value()]
     let stats = currentGen.stats
     let track  = currentTrack.id;
     let uuid   = currentTrack.uuid;
+    let passed = killerTest.passed[uuid];
+    if (passed) 
+      track = track + ' (' + passed + ')';
+
+    if (test) {
+      let killers = killerTest.killers ? killerTest.killers : Track.killers
+      if (killers.length)
+        track = track + ` of ${killers.length}`
+    }
 
     if (currentTrack.tricky && currentTrack.tricky != Track.config.TRICKY)
       track += ` t=${currentTrack.tricky}`
@@ -300,13 +391,20 @@ function drawInfo(cycles, vehicle)
       track += ` ${currentTrack.comment}`
 
     let serial = currentGen.serial
-    let elders = `${stats.elders}`
-
+    if (test && killerTest.start)
+      serial = `+${serial - killerTest.startGen}`
     text('generation ', 10, y); text(serial                , 150, y); y+= 25;
     text('track      ', 10, y); text(track                 , 150, y); y+= 25;
     text('rate       ', 10, y); text(rate                  , 150, y); y+= 25;
     text('speed      ', 10, y); text(cycles                , 150, y); y+= 25;
     text('store      ', 10, y); text(currentGen.countStored, 150, y); y+= 25;
+    let elders = `${stats.elders}`
+    if (test) {
+      if (killerTest.elders[currentTrack.uuidLapped])
+        elders = `${elders} + ${killerTest.elders[currentTrack.uuidLapped] - elders}`
+    } 
+    else if (stats.qualified && stats.qualified > elders)
+      elders = `${elders}[${stats.qualified-elders}]`
 
     text('elders     ', 10, y); text(elders   , 150, y); y+= 25;
     x = 200; y = 25
@@ -357,7 +455,7 @@ function onRunningException(x)
 // Appelée 60 fois / seconde
 function draw() {
   let vehicle
-  const cycles = UI.speedSlider.value();
+  const {cycles,step} = UI.status
   background(0);
 
   running: {
@@ -401,33 +499,61 @@ function draw() {
   // Le bouton 'Step', si enclenché, demande de mettre sur
   // pause après le premier appel à 'draw'. On réalise la pause
   // en mettant 'speed' à 0
-  if (UI.stepButton.value()) {
+  if (step) {
     UI.stepButton.value('')
     UI.speedSlider.value(0)
     if (UI.onStep) UI.onStep()
   }
 }
 
+/** Qualifie le circuit en cours de tueur
+ * - s'il l'est déjà, rien ne passe
+ * - sinon :
+ *   - on sauvegarde les tués et le circuit
+ *     tueur
+ *   - on enclenche éventuellement la qualification
+ */
 function declareKiller()
 {
   let def = Generation.config
-  if (currentTrack.declareKiller(currentGen)) {
+  no: {
+    let known = !currentTrack.declareKiller(currentGen)
+    if (known) break no
+
     console.log(`killer: ${currentTrack}`)
     let kill = `${currentTrack.kills}-t${currentTrack.serial - Track.offset}`
     let savedGen = `k${kill}.gen`;
     let savedTrack = `k${kill}.track`;
     saveGeneration(savedGen, ['dead']);
     saveTrack(savedTrack)
+
+    let { test } = UI.status
+    yes: {
+      let auto = def.AUTO_TEST
+      if (test) break no
+      if (auto === null || auto === false) break no
+      if (currentGen.total != def.TOTAL) break no
+      if (typeof auto == typeof true) break yes
+      if (currentGen.countElders <= auto) break yes
+      if (currentGen.countQualifiedOrElders > auto) break no
+    }
+
+    UI.message(`Not enough elders (elders=${currentGen.countElders} qualified=${currentGen.countQualifiedOrElders} auto=${def.AUTO_TEST}). Entering test`, true)
+    test = UI.testCheck
+    test.checked(true)
+    test.value('auto')
   }
 }
 
 function nextRace()
 {
-  if (!UI.speedSlider.value())
+  let {cycles, pause} = UI.status
+  if (!cycles)
     return
 
-  { // Cas standard : vraie course, générations...
+  {
     let limit
+    let def = Generation.config
     let stored = currentGen.countStored;
     const {FINISHED} = Generation.config
 
@@ -461,6 +587,6 @@ function nextRace()
   }
 
   // console.log(UI.genCheck)
-  if (UI.genCheck.checked())
+  if (pause)
     UI.speedSlider.value(0)
 }

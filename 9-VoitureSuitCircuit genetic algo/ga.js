@@ -63,8 +63,18 @@ class Generation {
     /** Nombre nominal de voitures à mettre en course */
     TOTAL: 30,
 
+    // Les entrées suivantes ne sont pas directement utilisées par Generation,
+    // mais par la logique de course implémentée par sketch.js. On les documente
+    // ici par soucis de rangement
+
+    /** On passe en mode test si le nombre d'anciens passe en dessous de cette limite
+     * 
+     * Si non nul, on passe également en auto-test si le nombre de qualifiés passe
+     * sous TOTAL
+     */
+    AUTO_TEST: 15,
     /** Nombre de voitures devant terminer pour passer à la course suivante */
-    FINISHED: 30
+    FINISHED: true
   }
 
   /**
@@ -141,6 +151,7 @@ class Generation {
    * @property {Vehicle} oldest   La plus vieille        
    * @property {Vehicle} youngest La plus jeune          
    * @property {Int}     elders   Nombre de vétérans (tous tests passés)
+   * @property {Int}  qualified   Nombre de qualifiés aux minis tests
    */
 
   /**
@@ -174,6 +185,9 @@ class Generation {
       }
       else
         vehicle.elder = false
+
+      if (vehicle.elder || vehicle.qualified)
+        qualified++;
 
       if (!oldest || oldest.old < vehicle.old)
         oldest = vehicle;
@@ -209,7 +223,8 @@ class Generation {
     this.lists.running  = running;
     
     let message = `${Generation.time()} ${track.id}: run=${running.length}`
-    if (olds) message += `, ${olds}(${elders}) olds; ${youngest.id} → ${oldest.id}`
+    if (track.crashKills) message += ` k=${track.crashKills}`
+    if (olds) message += `, ${olds}(${elders}) old(er)s; ${youngest.id} → ${oldest.id}`
     console.log(message)
 
     Vehicle.rank = 0; // Nombre de voitures ayant terminé
@@ -222,6 +237,7 @@ class Generation {
       oldest: oldest, 
       youngest: youngest, 
       elders: elders, 
+      qualified: qualified 
     }
 
     return this.stats
@@ -265,7 +281,7 @@ class Generation {
         vehicle = config
       }
       else
-        vehicle = new Vehicle(config)
+        vehicle = Vehicle.fromJSON(config)
 
       if (vehicle.uuid in ids) continue
       ids[vehicle.uuid] = vehicle
@@ -369,15 +385,32 @@ class Generation {
     }
 
     this.lists.finished = [];
-    this.lists.dead     = [];
+    this.lists.dead     = lists ? Generation.retainOlds(lists.dead) : [];
     this.lists.running  = running;
     this.lists.stored   = lists ? lists.stored : [];
   }
 
-  // On choisit un parent au hasard dans une liste
-  // 'parents'
-  // Note : on peut passer 'null' comme parents pour
-  // signifier une génération spontanée, sans ascendant
+  /** Garde les morts (pour héritage) */
+  static retainOlds(dead)
+  {
+    let retain = []
+    for (let vehicle of dead)
+    {
+      if (!vehicle.old) continue
+      vehicle.beta -= 1
+      if (vehicle.beta < 0) vehicle.beta = 0
+      retain.push(vehicle)
+    }
+
+    return retain
+  }
+  /** On choisit un parent au hasard dans une liste
+   * 'parents'
+   * Note : on peut passer 'null' comme parents pour
+   * signifier une génération spontanée, sans ascendant
+   * 
+   * @param {Vehicle[]} parents 
+   */ 
   static pickOne(parents) {
     let index = 0;
     let N = parents ? parents.length : 0;
@@ -405,7 +438,7 @@ class Generation {
       let vehicle = parents[index];
       // console.log(`picked #${index}/${N} fitness=${vehicle.fitness}`)
       // on en fait une copie et on la mute
-      child = new Vehicle(vehicle);
+      child = vehicle.copy();
       child.mutate(vehicle);
       child.parent = index;
     }
@@ -413,16 +446,18 @@ class Generation {
     return child;
   }
   
-  // On calcule la fitness de chaque voiture
-  // 
-  // - l'argument 'lists' est une liste de tableaux de voitures, typiquement
-  //   la liste Generation.lists
-  // - au moins un de ces tableaux est non vide
-  //
-  // - toutes les voitures se retrouvent dans l'unique tableau en retour, 
-  //   qui est ordonné ; la propriété 'fitness' de chaque
-  //   voiture est une probabilité sur la population ainsi
-  //   constituée
+  /** Calcule 'fitness' pour chaque voiture
+   * 
+   * - l'argument 'lists' est une liste de tableaux de voitures, typiquement
+   *   la liste Generation.lists
+   * - au moins un de ces tableaux est non vide
+   *
+   * - toutes les voitures se retrouvent dans l'unique tableau en retour, 
+   *   qui est ordonné ; la propriété 'fitness' de chaque
+   *   voiture est une probabilité sur la population ainsi
+   *   constituée 
+   * 
+   * */
   static calculateFitnessForAllCars(lists) {
     let vehicles = []
     
@@ -483,6 +518,45 @@ class Generation {
     }
   }
 
+  markQualified(killers) {
+    let lists = this.lists
+    let count = 0
+
+    for (let k of [ 'stored', 'finished'])
+    {
+      let list = lists[k]
+      for (let vehicle of list) {
+        if (vehicle.hasPassedAll(killers))
+        {
+          vehicle.qualified = true
+          count++
+        }
+      }
+    }
+
+    return count
+  }
+
+  removeUnqualified() {
+    let lists = this.lists
+    let unqualified = []
+    let count = 0
+    for (let k of Object.keys(lists)) {
+      let list = []
+      for (let vehicle of lists[k]) {
+        // vehicle.elder = vehicle.hasPassedAll()
+        if (vehicle.qualified || vehicle.elder)
+          list.push(vehicle)
+        else
+          unqualified.push(vehicle)
+      }
+      lists[k] = list
+    }
+    count = unqualified.length
+    lists.unqualified = unqualified
+
+    return count
+  }
 
   // On range les voitures qui ne sont plus en course entre 
   // les listes 'finished' et 'dead'
@@ -547,6 +621,21 @@ class Generation {
     lists.finished = [];
 
     this.status = Generation.STATUS_FINISHED;
+
+    /*
+    On incrémente beta pour toutes les voitures qui ont
+    passé le circuit. Cela vaut en particulier pour celles
+    qui étaient au garage, et n'ont par conséquent pas
+    couru une nouvelle fois. Plus on peine à atteindre
+    le quota de succès pour un circuit, plus les vétérans 
+    doivent montrer l'exemple
+    */
+    if (stored.length < this.total && this.started)
+    {
+      for (let vehicle of stored)
+        if (vehicle.hasPassed(this.started))
+          vehicle.beta += 1
+    }
 
     return N > 0;
   }
@@ -699,10 +788,90 @@ class Generation {
 
     return count
   }
+  get countDeadElders() {
+    let count = 0
+    this.lists.dead.map(v => { if (v.elder && v.dead != 'murder') count++});
+
+    return count
+  }
+  get countDeadQualifiedOrElders() {
+    let count = 0
+    this.lists.dead.map(v => { if (v.elder || v.qualified) if (v.dead != 'murder') count++ });
+
+    return count
+  }
+
+  get countStoredElders() {
+    let count = 0
+    this.lists.stored.map(v => {if (v.elder) count++});
+
+    return count
+  }
+  get countElders() {
+    let count = 0
+    for (let k of ['stored', 'finished', 'running' ])
+      this.lists[k].map(v => { if (v.elder) count++ });
+
+    return count
+  }
   get countOlds() {
     let count = 0
     for (let k of ['stored', 'finished', 'running'])
       this.lists[k].map(v => { if (v.old) count++ });
+
+    return count
+  }
+
+  get countRunningElders() {
+    let count = 0
+    let total = 0
+    for (let k of ['running'])
+      this.lists[k].map(v => { total++; if (v.elder) count++ });
+
+    return [count, total]
+  }
+
+  get countQualifiedOrElders() {
+    let lists = this.lists
+    let count = 0
+
+    for (let k of ['stored', 'finished', 'running']) {
+      lists[k].map (vehicle => {
+        if (vehicle.qualified || vehicle.elder) {
+          count++
+        }
+      })
+    }
+
+    return count
+  }
+
+  countNonElderOlderThan(old) {
+    let lists = this.lists
+    let count = 0
+
+    for (let k of ['stored', 'finished', 'running']) {
+      lists[k].map(vehicle => {
+        if (vehicle.old > old && !vehicle.elder) {
+          count++
+        }
+      })
+    }
+
+    return count
+  }
+
+  countHasPassed(tracks) {
+    let lists = this.lists
+    let count = 0
+
+    for (let k of ['stored', 'finished', 'running']) {
+      lists[k].map(vehicle => {
+        if (vehicle.elder || vehicle.hasPassedAll(tracks)) {
+          count++
+        }
+      })
+    }
 
     return count
   }

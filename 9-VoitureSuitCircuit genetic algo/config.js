@@ -53,6 +53,7 @@ const CONFIG = {
         /** Monde de circuits tueurs        @type {string|string[]} */ LOAD_KILLERS: null,
 
         // État initial de l'interface utilisateur
+        /** Case Test cochée     @type boolean  */ CHECK_TEST  : null,
         /** Étages d'ascenseur   @type {int[]}  */ RATES       : null,
     }, 
 
@@ -71,17 +72,21 @@ const CONFIG = {
 {
     let def = CONFIG.Sketch
 
-    def.LOAD_GEN = //  null;
-        [
-//         'gen7',
-        ]
+    def.LOAD_GEN = [
+        // 'gen4',
+        // 'gen-simple-0'
+    ]
 
     def.LOAD_TRACKS = [
         // 'initialTracks'
     ]
     def.LOAD_KILLERS = [
-//         'initialTracks'
+        // 'killerTracks',
+        // 'initialTracks'
+        // 'killerTracks/initial-3'
     ]
+
+    def.CHECK_TEST = true; false;
     def.RATES = [0, 0.1, 0.5, 1, 2, 4, 8, 12, 16, 24];
 }
 
@@ -101,7 +106,7 @@ CONFIG.Vehicle = function () {
 CONFIG.Track = function () {
     let def = Track.config;
 
-    def.TRICKY = 1; 6.5; 
+    def.TRICKY = 3; 6.5; 
     def.LAPS = 2;
 
     return CONFIG.Track
@@ -121,7 +126,7 @@ CONFIG.Generation = function() {
 CONFIG.Test = function() {
     let def = Test.config
 
-    def.MIN_ELDERS = 15
+    def.MIN_ELDERS = 5
     def.MAX_TRACKS = 10; 0;
     def.FULL = true
 

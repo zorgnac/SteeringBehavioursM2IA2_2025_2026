@@ -15,17 +15,79 @@ function pointToLineDistance(p1, p2, x, y) {
   return num / den;
 }
 
+
+
+/** 
+ * Voiture de course
+ * 
+ * Le constructeur {@link Vehicle.constructor} peut prendre en argument
+ * un JSON ou une voiture mère. Par défaut, la configuration
+ * est définie par {@link Vehicle.config}.
+ * 
+ * La voiture, une fois préparée pour un circuit ({@link Vehicle.prepare}),
+ * decide sa prochaine action en fonction des informations dont elle dispose 
+ * ({@link Vehicle.lookAndSteer}), puis
+ * calcule la dynamique physique de l'action pour un quanta de temps ({@link Vehicle.update}).
+ * 
+ * Une fois le circuit terminé, on estime un mérite
+ * ({@link Vehicle.calculateFitness}). Cette récompense sera
+ * utilisée pour décider des voitures mères
+ * pour la prochaine {@link Generation}. 
+ * 
+ * Une voiture de nouvelle génération
+ * subit une mutation génétique ({@link Vehicle.mutate}), avec un taux et
+ * une sévérité qui dépendent d'une température propre. Cette température est réglée d'après
+ * {@link Vehicle.beta} et {@link Vehicle.curves}.
+ * 
+ * Le dessin dans le canvas est assuré par {@link Vehicle.show} et {@link Vehicle.highlight}.
+ * 
+ * Pour des versions anciennes, voir {@link Vehicle.Version}
+ * 
+ */
 class Vehicle {
-  static version = 0
+  /** Symétrie et sondes d'orientation */
+  static version = "sym-dir-1"
 
   // Indices dans le tableau de sortie de la prédiction du cerveau
   static OUTPUT_DIR = 0
   static OUTPUT_MAG = 1
   
+
+  /** 
+   * Configuration
+   * 
+   * On peut découper les entrées de `config` en deux types d'usage :
+   * 
+   * - celles qui sont directement référencées dans le code, et
+   *   qui gèrent les aspects globaux, indépendants de l'instance ;
+   *   ces entrées peuvent varier selon la version de Vehicle (voir
+   *   VehicleVersion* et PaceCar)
+   * 
+   * - celles qui servent à l'initialisation de l'instance ; une
+   *   instance copie les valeurs de `config`, mais ces copies
+   *   ont vocation à êtres modifiées, en particulier par chargement
+   *   d'une voiture précédemment sauvegardée
+   * 
+   * Dans l'idée, `config` est une collection de constantes (d'où la casse), mais en pratique 
+   * on peut changer les valeurs en cours d'expérience. `sketch.js` écrase (via `config.js`,
+   * voir {@link CONFIG.Vehicle})
+   * un certain nombre de choses prédéfinies ici. C'est plutôt 'config.js' qu'il
+   * toucher, sachant que les valeurs ci-dessous permettent surtout d'avoir sûrement
+   * une définition, quel que soit le point de GIT qu'on choisisse.
+   * 
+   * Dans le cadre de la configuration d'une nouvelle génération de voiture
+   * (changement de topologie de cerveau, de fonction d'activation, de limites, 
+   * d'options...), il est plus clair de définir quelques voitures-modèles 
+   * dans un JSON représentant une esquisse de génération, plutôt que de
+   * touiller les valeurs ici ou dans 'config.js'. On peut alors charger le
+   * JSON par {@link CONFIG.Sketch.LOAD_GEN} de 'config.js', tout en gardant la configuration établie.
+   */
   static config = {
     /** Taux de remplacement sur mutation      */    MUTATION_RATE: 0.1, 
     /** Sévérité d'un remplacement sur mutation*/    MUTATION_TEMPERATURE: 1,
 
+    /** Temperature en fonction de beta*/ BETA_TEMPERATURE  : {0: 1, 10:0.75, 100:0.1, 1000:0.01},
+    /** Taux en fonction de beta       */ BETA_RATE         : {0: 1, 10:0.75, 100:0.1, 1000:0.01},
     /** Erosion de beta sur mort       */ BETA_FACTOR_DEAD  : 1,
     /** Erosion de beta sur héritage   */ BETA_FACTOR_INHERIT : 2/3,
 
@@ -36,12 +98,12 @@ class Vehicle {
      * trompe de direction (et arrêter de polluer le canvas). La valeur peut donc 
      * être plutôt grande              */ LIFESPAN        : 3*150         ,
 
-    /** Portée de vue                  */ SIGHT           : 100         ,
-    /** Nombre de rayons               */ VIEW_SPAN       : 3           ,
+    /** Portée de vue                  */ SIGHT           : 300         ,
+    /** Nombre de rayons               */ VIEW_SPAN       : 1           ,
     /** Angle entre rayons (degrés)    */ ANGLE           : 15          ,
 
 
-    /** Couches internes du cerveau    */ HIDDEN          : 0    , 
+    /** Couches internes du cerveau    */ HIDDEN          : "x2"        , 
 
     /** Limite de vitesse              */ MAX_SPEED       : 5           ,
     /** Limite d'accélération          */ MAX_FORCE       : 0.2         ,
@@ -53,8 +115,12 @@ class Vehicle {
 
     /** Options (capteurs et cerveau) */
     OPTIONS         : { 
-      /** Fonction d'activation                  */ 'activation': 'sigmoid'
+      /** Désactive la symétrie                  */ 'no-sym'     : false,
+      /** Sens sur tous rayons                   */ 'side-direct': true,
+      /** Fonction d'activation                  */ 'activation': 'relu'
     }        ,
+    // Constantes de calcul de fitness
+    /** Poids de la vitesse au tour */ WEIGHT_SPEED    : 1           ,
 }
 
   static serial = 0; // Numéro de série du dernier bolide
@@ -89,6 +155,7 @@ class Vehicle {
     Vehicle.serial++;
     /** Numéro de série    @type Int    */    this.serial = Vehicle.serial;
     /** Identifiant unique @type String */    this.uuid   = Track.uuid()
+    /** Chaîne d'héritage  @type Array  */    this.parentUuid = []
 
     /** @type Vehicle.config */
     let def     = this.constructor.config
@@ -107,8 +174,15 @@ class Vehicle {
     this.hidden       = def.HIDDEN  ;
     this.options      = def.OPTIONS ;
 
+    this.version  = this.constructor.version;
+    
     /** Nombre de circuits terminés     */ this.old      = 0;
     /** Température inverse de mutation */ this.beta     = 0;
+    /** Courbes de mutation selon {@link Vehicle.beta} */
+    this.curves = {
+      temperature: def.BETA_TEMPERATURE,
+      rate: def.BETA_RATE
+    }
 
     /** Statistiques de parcourt */
     this.stats   = { vel: {sum1: 0, sum2: 0, mean: 0, sigma: 0}, N: 0 }
@@ -151,6 +225,7 @@ class Vehicle {
         this.makeBrain()
       }
     }
+    this.makeSymmetry()
   }
 
 
@@ -221,10 +296,15 @@ class Vehicle {
   makeBrain() {
     let width = (2 * this.span + 1)
 
+    let direct = 0
+    if (this.options['side-direct'])
+      direct = width
+
+    width        += direct;
     let hidden       = this.hidden;
-    if (!hidden) hidden = width*2
+    if (hidden == 'x2') hidden = width*2
     let final        = 2
-    this.brain  = new NeuralNetwork(null, width, hidden, final);
+    this.brain  = new NeuralNetwork(null, width, hidden, final, this.options.activation);
   }
 
   /** Hérite - pas de mutation ici (voir {@link Vehicle.mutate}) */
@@ -239,9 +319,12 @@ class Vehicle {
       }
       this.span         = parent.span     ;
       this.angle        = parent.angle    ;
+      this.parentUuid = [parent.uuid].concat(parent.parentUuid)
+      this.curves       = parent.curves
       this.options      = parent.options
       
       this.hidden = parent.hidden
+      this.version  = parent.version       ;
       this.beta     = parent.beta*def.BETA_FACTOR_INHERIT      ;
     }
   }
@@ -293,6 +376,7 @@ class Vehicle {
     }
     return str
   }
+
   /** Résumé sous forme clé/valeur */
   get cells() {
     let unit = this.speedUnit / 2.5
@@ -340,12 +424,17 @@ class Vehicle {
       "uuid", 
       "dead",
       "limit",
-      "options", 
+      "curves",
+      "options",
     ]
     set_if(["name", "champion"])
     set_always(keys)
     
-    set_if([ "parentUuid", "qualified" ])
+    set_if([ 
+      "ahead",
+      "parentUuid", 
+      "qualified" 
+    ])
 
     if (this.brain)
       json.brain = this.brain.toJSON();
@@ -354,6 +443,7 @@ class Vehicle {
 
     return json
   }
+
   /** Fusionne la valeur par défaut et la valeur du JSON */
   static merge(k, tgt, src) {
     done: {
@@ -376,6 +466,29 @@ class Vehicle {
       tgt[k] = src[k]
     }
   }
+
+  /** Aiguillage de version */
+  static fromJSON(json)
+  {
+    let vehicle = null;
+    let version = json.version
+
+    found: 
+    {
+      if (version in Vehicle.Version) {
+        vehicle = new Vehicle.Version[version](json)
+        break found
+      }
+      if (version == Vehicle.version) {
+        vehicle = new Vehicle(json)
+        break found
+      }
+
+      vehicle = new Vehicle(json)
+    }
+
+    return vehicle;
+  }
   
   fromJSON(json) {
     for (let k in json)
@@ -385,7 +498,7 @@ class Vehicle {
         case "options":
           this[k] = json[k];
           break
-        default:
+        default: // Les autres doivent surcharger les définitions précédentes
           this.constructor.merge(k, this, json);
       }
     }
@@ -402,7 +515,15 @@ class Vehicle {
       this.makeBrain()
   }
 
-  /** 
+  /** Consulte ou déclare si on a déjà passé un circuit
+   * 
+   * VALUE peut être :
+   * - false, auquel on oublie le circuit
+   * - une valeur dont la conversion booléenne est 'vrai', auquel
+   *   cas on remplit notre mémoire avec nos dernières statistiques de parcourt
+   * - autre chose, auquel on ne touche à rien
+   * 
+   * Retourne les statistiques du circuit
    * @param {Track} track
   */
   hasPassed(track, value)
@@ -453,10 +574,53 @@ class Vehicle {
     this.applyForce(force);
   }
 
+  /** Calcule la valeur selon une courbe linéaire par morceaux
+   * @param {Number} b - abscise, typiquement {@link Vehicle.beta}
+   * @param {Object} b10 - définition de la courbe, typiquement parmi {@link Vehicle.curves}
+   * @returns {Number} ordonnée
+   * 
+   * @example
+   * b10 = { "10": 0.1, "100": 0.05 }
+   * computeRatio(0,b10) == 1
+   * computeRatio(5,b10) == 0.55
+   * computeRatio(100,b10) == 0.05
+   * computeRatio(1000,b10) == 0.05
+   */
+  static computeRatio(b, b10)
+  {
+    if (!b10) b10 = { 10:0.1 }
+    let r0 = 1
+    let b0 = 0
+    let r = 0
+
+    found: 
+    {
+      for (let b1 in b10) {
+        let r1 = b10[b1]
+        b1 = int(b1)
+        if (b < b1) {
+          r = (b-b0)*r1 + (b1-b)*r0
+          r = r/(b1-b0)
+          break found
+        }
+        r  = r0
+        r0 = r1
+        b0 = b1
+      }
+    }
+    return r
+  }
   /** Applique une mutation à l'ADN (réseau de neurones) de la voiture courante */
-  mutate() {
+  mutate(parent) {
     let def = Vehicle.config
-    this.brain.mutate(def.MUTATION_RATE, def.MUTATION_TEMPERATURE);
+    let ratio  = this.constructor.computeRatio
+    let beta   = parent.beta
+
+    let curves = this.curves
+    let temperature = ratio(beta, curves.temperature)*def.MUTATION_TEMPERATURE
+    let rate        = ratio(beta, curves.rate)       *def.MUTATION_RATE
+
+    this.brain.mutate(rate, temperature);
   }
 
   applyForce(force) {
@@ -609,8 +773,14 @@ class Vehicle {
   
   /** Calcul de 'fitness' */
   calculateFitness() {
+    /** @type {Vehicle.config} */ let def = this.constructor.config
+    let speed = def.WEIGHT_SPEED*this.speed 
+
+    this.fitness = (1 + this.points) * (1 + speed) / 
+      ((this.track.laps*this.track.checkpoints.length+1)*(1+def.WEIGHT_SPEED))
+
     // on met la fitness au carré, pour voir si ça marche mieux
-    this.fitness = pow(this.points, 2);
+    this.fitness = pow(this.fitness, 2);
 
     // On pourrait booster la fitness si on a fini le circuit....
     // if (this.finished) {
@@ -637,6 +807,9 @@ class Vehicle {
         x.vehicle = this
       throw x
     }
+    let direct = this.options["side-direct"] ? "side" : null
+    if (direct)
+      this.direct = []
 
     if (closest.d < this.limit.safe)
       this.kill('crash', closest.wall, closest.d);
@@ -672,7 +845,30 @@ class Vehicle {
       if (input < 0) input = 0
       if (input > 1) input = 1
       inputs.push(input) ;
+
+      if (!direct) continue
+      // On garde dans this.direct le point "c" du mur le
+      // le plus proche ; "c" indique l'orientation du mur, que l'on
+      // transforme en un "sign" (0 ou 1)
+      if (!closest.wall) this.direct[i] = { point: this.pos, sign: 0.5 }
+      else {
+        let c = closest.wall.c
+        let pc = p5.Vector.sub(c, this.pos)
+        let pp = p5.Vector.sub(closest.point, this.pos)
+        let sign = p5.Vector.cross(pc, pp).z
+        sign = sign > 0 ? 1 : 0
+        
+        this.direct[i] = { point: c, sign: sign }
+      }
     }
+
+    if (direct) {
+      // On pousse "sign" qu'on vient de calculer
+      for (let side of this.direct) {
+        inputs.push(side.sign)
+      }
+    }
+
     return inputs
   }
 
@@ -704,12 +900,45 @@ class Vehicle {
     // On applique la force
     return force;
   }
+
+
+  /** Compose la symétrie des capteurs */
+  makeSymmetry() {
+    let symmetry = new Vehicle.Sym
+
+    // Partie 'rays' : symétrie par rapport à un pivot
+    let n = this.span * 2 + 1
+    symmetry.symPivot(n)
+
+    // Booléen directionnel: sens de parcourt
+    if (this.options['side-direct']) {
+      symmetry.antiPivot(n)
+    }
+
+    this.symmetry = symmetry
+
+    return symmetry
+  }
+
   /** Décide de la consigne en fonction des capteurs */
   decide(inputs, symmetrize) {
-    // symmetrize : code à venir
-    let list = [inputs]
+    if (symmetrize == null) symmetrize = !this.options['no-sym']
+    let list
+    if (symmetrize) list = [inputs, this.symmetry.apply(inputs)]
+    else list = [inputs]
     
     let predict  = this.brain.predict(...list);
+
+    if (symmetrize) 
+    {
+      /* predict est [ ...direct, ...reverse ] */
+      let symmetric = []
+      
+      symmetric[Vehicle.OUTPUT_MAG] = (predict[Vehicle.OUTPUT_MAG] + predict[Vehicle.OUTPUT_MAG+2]) / 2
+      symmetric[Vehicle.OUTPUT_DIR] = (predict[Vehicle.OUTPUT_DIR] - predict[Vehicle.OUTPUT_DIR+2] + 1) / 2
+
+      predict = symmetric
+    }
 
     return predict
   }
@@ -751,14 +980,39 @@ class Vehicle {
     }
   }
 
-    /** Met en surbrillance la voiture */
+  showArrow(point,c) {
+    push()
+    noFill() // fill(0, 255, 0)
+    stroke(0, 255, 0)
+    strokeWeight(1)
+    let dp = p5.Vector.sub(c, point)
+    const size = 7
+    translate(point.x, point.y)
+    rotate(dp.heading())
+    translate(-size / 2, 0)
+    triangle(0, size / 2, 0, -size / 2, 2 * size, 0)
+    pop()
+  }
+
+  /** Met en surbrillance la voiture */
   highlight(config) {
+    if (!config) config = {}
+
     push();
     translate(this.pos.x, this.pos.y);
     const heading = this.vel.heading();
     rotate(heading);
-    stroke(0, 255, 0);
-    fill(0, 255, 0);
+    if (this.old)
+      stroke(255,0,0);
+    else
+      stroke(0, 255, 0);
+
+    if (config.fill)
+      fill(config.fill);
+
+    else 
+      fill(0, 255, 0);
+
     rectMode(CENTER);
     rect(0, 0, 20, 10);
     pop();
@@ -766,15 +1020,127 @@ class Vehicle {
     // On dessine aussi les rayons de la voiture en tête
     {  
       let sight = this.limit.sight
+      let direct = this.direct
       for (let i in this.rays) {
         let ray = this.rays[i];
         let point = this.seen[i];
         // console.log(`seen ${point}`);
         ray.show(point, sight);
+        if (direct && point)
+          this.showArrow(point, direct[i].point)
       }
     }
     if (this.goal) {
       this.goal.show();
     }
   }
+
+  static Sym = (function() {
+    /** Symétrie des capteurs */
+    class Sym {
+      constructor() {
+        /** index       */ this.i = 0
+        /** permutation */ this.r = []
+        /** signe       */ this.s = []
+        /** décalage    */ this.o = []
+      }
+
+      antiPivot(di) {
+        let { r, s, o, i } = this
+        for (di--; di >= 0; di--) {
+          r[i] = this.i + di
+          s[i] = -1
+          o[i] = 1
+          i++
+        }
+        this.i = i
+      }
+      symPivot(di) {
+        let { r, s, o, i } = this
+        for (di--; di >= 0; di--) {
+          r[i] = this.i + di
+          s[i] = 1
+          o[i] = 0
+          i++
+        }
+        this.i = i
+      }
+      antiPlace(di) {
+        let { r, s, o, i } = this
+        for (; di > 0; di--) {
+          r[i] = i
+          s[i] = -1
+          o[i] = 1
+          i++
+        }
+        this.i = i
+      }
+      copy(di) {
+        let { r, s, o, i } = this
+        for (; di > 0; di--) {
+          r[i] = i
+          s[i] = 1
+          o[i] = 0
+          i++
+        }
+        this.i = i
+      }
+
+      /** Applique la symétrie à une couche d'entrée
+       * @param {number[]} inputs
+       */
+      apply(inputs) {
+        let { r, s, o } = this
+        let symmetric = []
+
+        for (let i in inputs) {
+          symmetric[i] = inputs[r[i]] * s[i] + o[i]
+        }
+
+        return symmetric
+      }
+
+    }
+
+    return Sym
+  } )()
+
+  /** Différentes version du code
+   * 
+   * L'usage principal est de récupérer des JSON de
+   * vielles voitures et de restituer leur comportement
+   * avec le code à jour
+   */
+  static Version = null
 }
+
+Vehicle.Version = (function() {
+  class V1 extends Vehicle {
+    static version = 1
+
+    constructor(config) {
+      if (!config) config = {
+        span: 3,
+        hidden: "x2",
+      }
+      
+      config.curves = {
+        temperature: { 0: 1 },
+        rate: { 0: 1 }
+      }
+
+      if (!config.options) {
+        config.options = {
+          "activation": "sigmoid"
+        }
+      }
+
+      config.options["no-sym"] = true
+
+      super(config)
+    }
+  }
+
+  return {1:V1}
+}
+)()
