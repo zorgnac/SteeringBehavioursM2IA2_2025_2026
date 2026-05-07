@@ -1,4 +1,4 @@
-let COMMENT = "Pas de console.log"
+let COMMENT = "Distance signée à la piste"
 
 const TOTAL = 100;
 const MUTATION_RATE = 0.1;

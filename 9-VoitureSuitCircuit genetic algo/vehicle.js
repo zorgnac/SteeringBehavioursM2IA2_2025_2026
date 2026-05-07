@@ -16,7 +16,14 @@ function pointToLineDistance(p1, p2, x, y) {
 }
 
 class Vehicle {
+  // Indices dans le tableau de sortie de la prédiction du cerveau
+  static OUTPUT_DIR = 0
+  static OUTPUT_MAG = 1
+  
   static config = {
+    /** Taux de remplacement sur mutation      */    MUTATION_RATE: 0.1, 
+    /** Sévérité d'un remplacement sur mutation*/    MUTATION_TEMPERATURE: 1,
+
     /** Délai d'abandon sur checkpoint 
      * 
      * Attention - il est facile de détruire des voitures de manière indue
@@ -29,7 +36,12 @@ class Vehicle {
     /** Angle entre rayons (degrés)    */ ANGLE           : 15          ,
 
     /** Limite de vitesse              */ MAX_SPEED       : 5           ,
-    /** Limite d'accélération          */ MAX_FORCE       : 0.02        ,
+    /** Limite d'accélération          */ MAX_FORCE       : 0.2         ,
+    /** Limite de distance aux murs
+     * 
+     * La distance peut être négative. Avec -0.01, on
+     * a le droit de mordre de 0.01 pixel sur le bord de 
+     * piste                           */ SAFE            : 0           ,
 }
 
   static serial = 0; // Numéro de série du dernier bolide
@@ -40,11 +52,14 @@ class Vehicle {
     Vehicle.serial++;
     /** Numéro de série    @type Int    */    this.serial = Vehicle.serial;
 
-let def = Vehicle.config
+    let def = Vehicle.config
 
-      this.maxspeed = def.MAX_SPEED;
-      this.maxforce = def.MAX_FORCE;
-      this.sight = def.SIGHT;
+    this.limit = {
+      speed     : def.MAX_SPEED,
+      force     : def.MAX_FORCE, // 0.2;
+      sight     : def.SIGHT,
+      safe      : def.SAFE
+    }
   
     this.span         = def.VIEW_SPAN;
     this.angle        = def.ANGLE   ;
@@ -105,7 +120,7 @@ let def = Vehicle.config
     /** Nombre de tours effectués          */ this.laps = 0;
 
     // Statistiques
-{
+    {
       let vel = this.stats.vel;
       vel.sum1 = 0
       vel.sum2 = 0
@@ -127,24 +142,31 @@ let def = Vehicle.config
     }
   }
   
-    dispose() {
-      this.brain.dispose();
-    }
-  
-    applyBehaviors(walls) {
-      // On appelle le comportement look
-      let force = this.look(walls);
-      this.applyForce(force);
-    }
+  dispose() {
+    this.brain.dispose();
+  }
 
-    // Applique une mutation à l'ADN (réseau de neurones) de la voiture courante
-    mutate() {
-      this.brain.mutate(MUTATION_RATE);
-    }
-  
-    applyForce(force) {
-      this.acc.add(force);
-    }
+  applyBehaviors(walls) {
+    // On appelle le comportement look
+    if (!walls) walls = this.track.walls;
+
+    this.acc.set(0, 0);
+    let force 
+
+    force = this.lookAndSteer(walls);
+    this.applyForce(force);
+  }
+
+  /** Applique une mutation à l'ADN (réseau de neurones) de la voiture courante */
+  mutate() {
+    let def = Vehicle.config
+    this.brain.mutate(def.MUTATION_RATE, def.MUTATION_TEMPERATURE);
+  }
+
+  applyForce(force) {
+    this.acc.add(force);
+  }
+
   /** Met à jour la statistique de vitesse */
   updateStats() {
     let vel = this.vel.mag()/this.speedUnit
@@ -161,32 +183,37 @@ let def = Vehicle.config
     V.var   = V.sum2/N - V.mean*V.mean
     V.sigma = sqrt(V.var)
   }
-  
-    update() {
-      if (!this.dead && !this.finished) {
-        let def = Vehicle.config
-        this.pos.add(this.vel);
-        this.vel.add(this.acc);
-        this.vel.limit(this.maxspeed);
-        this.acc.set(0, 0);
 
-        // On incrémente le compteur
-        // si on dépasse le temps de vie
-        // on meurt, on tue la voiture
-        this.counter++;
-        if (this.counter > def.LIFESPAN) {
-          this.dead = true;
-        }
-  
-        // on a fait déplacer et tourner la voiture, on va
-        // aussi faire tourner les rayons
-        for (let i = 0; i < this.rays.length; i++) {
-          this.rays[i].rotate(this.vel.heading());
-        }
+  /** Met à jour la position et la vitesse en fonction de l'accélération */
+  update() {
+    let def = this.constructor.config
+
+    if (!this.dead && !this.finished) {
+      this.pos.add(this.vel);
+      this.vel.add(this.acc);
+
+      if (this.limit.speed)
+        this.vel.limit(this.limit.speed);
+      // this.acc.set(0, 0);
+
+      // On incrémente le compteur
+      // si on dépasse le temps de vie
+      // on meurt, on tue la voiture
+      this.counter++;
+      if (this.counter > def.LIFESPAN) {
+        this.kill('abandon');
+      }
+
+      // on a fait déplacer et tourner la voiture, on va
+      // aussi faire tourner les rayons
+      for (let i = 0; i < this.rays.length; i++) {
+        this.rays[i].rotate(this.vel.heading());
+      }
+
       // On accumule des statistique de vitesse
       this.updateStats()
-      }
     }
+  }
   
   /** Ajustements supplémentaires quand on boucle un tour */
   onlap() {
@@ -240,129 +267,205 @@ let def = Vehicle.config
       }
     }
   }
-  
-    // Ajustage de la fonction de fitness
-    calculateFitness() {
-      // on met la fitness au carré, pour voir si ça marche mieux
-      this.fitness = pow(this.points, 2);
 
-      // On pourrait booster la fitness si on a fini le circuit....
-      // if (this.finished) {
-      // } else {
-      //   const d = p5.Vector.dist(this.pos, target);
-      //   this.fitness = constrain(1 / d, 0, 1);
-      // }
-    }
-  
-    // C'est LE comportement de la voiture,
-    // elle va regarder autour d'elle et prendre des décisions
-    // en fonction de ce qu'elle voit
-    // Elle va ensuite appliquer une force pour se diriger
-    // vers le checkpoint suivant
-    // Elle va aussi éviter les murs
-    look(walls) {
+  /** Met la voiture hors course 
+   * 
+   * Selon la raison, met à jour le circuit vis-à-vis
+   * des zones dangereuses. Les voitures assassinées
+   * ne sont pas prises en compte dans l'estimation 
+   * de la dangerosité du circuit.
+  */
+  kill(reason, walls, d)
+  {
+    /**@type Vehicle.config*/ let def = this.constructor.config
 
-      // Lancement des rayons
-      // On va regarder autour de nous
-      // pour voir si on a des murs
-      // On va ensuite prendre des décisions
-      // en fonction de ce qu'on voit
-      const inputs = [];
+    const { track, index } = this;
+    if (this.dead)      return;
+    if (this.finished)  return;
 
-      // Pour chaque rayon
-      for (let i = 0; i < this.rays.length; i++) {
-        const ray = this.rays[i];
-        let closest = null;
-        let record = this.sight;
-
-        // Pour chaque mur
-        for (let wall of walls) {
-          // On regarde si le rayon intersecte le mur en question
-          const pt = ray.cast(wall);
-          if (pt) {
-            const d = p5.Vector.dist(this.pos, pt);
-            if (d < record && d < this.sight) {
-              record = d;
-              closest = pt;
-            }
+    if (this.old) {
+      let point = track.checkpoints[index];
+      if (reason == 'crash') {
+        if (walls) {
+          if (!point.hits) point.hits = {}
+          if (!Array.isArray(walls)) walls = [walls]
+          for (let wall of walls) {
+            if (!wall.killer) wall.killer = 0
+            wall.killer++;
+            point.hits[wall.index] = wall.killer
           }
         }
+      }
+      if (reason == 'abandon') {
+        if (!point.away) point.away = 0;
+        point.away ++;
+      }
+
+    }
+    if (!reason) reason = 'murder';
+    if (this.old > 10 || this.name)
+      console.log(`lost ${this} due to ${reason}`)
+
+    this.event = reason;
+    this.dead  = reason;
+  }
   
-        // Si on est à moins de 5 pixels d'un mur, on meurt
-        if (record < 5) {
-          this.dead = true;
-        }
-  
-        // On met la couche de neurone en entrée avec des valeurs entre 0 et 1
-        // Rappel, on a i rayons (on est dans une boucle for sur les rayons
-        // et on a une couche d'entrée avec autant de neurones que de rayons
-        inputs[i] = map(record, 0, 50, 1, 0);
-  
-        // Si on a touché au moins un mur
-        if (closest) {
-          // colorMode(HSB);
-          // stroke((i + frameCount * 2) % 360, 255, 255, 50);
-          // stroke(255);
-          // line(this.pos.x, this.pos.y, closest.x, closest.y);
+  /** Calcul de 'fitness' */
+  calculateFitness() {
+    // on met la fitness au carré, pour voir si ça marche mieux
+    this.fitness = pow(this.points, 2);
+
+    // On pourrait booster la fitness si on a fini le circuit....
+    // if (this.finished) {
+    // } else {
+    //   const d = p5.Vector.dist(this.pos, target);
+    //   this.fitness = constrain(1 / d, 0, 1);
+    // }
+  }
+
+  /** Observe les positions des murs selon les rayons */
+  lookAround(walls) {
+    // Lancement des rayons
+    // On va regarder autour de nous
+    // pour voir si on a des murs
+    const inputs = [];
+    this.seen = [];
+
+    let closest
+    try {
+      closest = Track.distance(this.pos, walls)
+    }
+    catch (x) {
+      if (x.type == "wallInfo")
+        x.vehicle = this
+      throw x
+    }
+
+    if (closest.d < this.limit.safe)
+      this.kill('crash', closest.wall, closest.d);
+
+    // Pour chaque rayon
+    for (let i = 0; i < this.rays.length; i++) {
+      const ray = this.rays[i];
+      let closest = {point: null, d: Infinity};
+      // let record = this.limit.sight;
+
+      // Pour chaque mur
+      for (let wall of walls) {
+        // On regarde si le rayon intersecte le mur en question
+        const point = ray.cast(wall);
+        if (point) {
+          const d = p5.Vector.dist(this.pos, point);
+          if (d < closest.d) {
+            closest.d  = d;
+            closest.wall = wall
+            closest.point = point
+          }
         }
       }
 
-      // On demande au réseau de neurones de prédire la prochaine action
-      // output est un tableau à deux dimensions, deux neurones en sortie
-      // output[0] est la direction
-      // output[1] est la vitesse
-      
-      const output = this.brain.predict(inputs);
-      
-      let angle = map(output[0], 0, 1, -PI, PI);
-      let speed = map(output[1], 0, 1, 0, this.maxspeed);
-      angle += this.vel.heading();
+      // On se rappelle le point d'intersection pour le dessiner
+      // sur le canvas
+      this.seen[i] = (closest.d <= this.limit.sight)  ? closest.point : null;
 
-      // Calcul de la force à appliquer
-      // On calcule un vecteur à partir de l'angle et de la vitesse
-      // c'est la vitesse souhaitée
-      const vitesseSouhaitee = p5.Vector.fromAngle(angle);
-      vitesseSouhaitee.setMag(speed);
+      // On met la couche de neurone en entrée avec des valeurs entre 0 et 1
+      // Rappel, on a i rayons (on est dans une boucle for sur les rayons
+      // et on a une couche d'entrée avec autant de neurones que de rayons
+      let input = map(closest.d, 0, this.limit.sight, 1, 0)
+      if (input < 0) input = 0
+      if (input > 1) input = 1
+      inputs.push(input) ;
+    }
+    return inputs
+  }
 
-      // force = vitesse souhaitée - vitesse actuelle
-      let force = p5.Vector.sub(vitesseSouhaitee, this.vel);
+  /** Unité de vitesse. Si this.limit.speed, c'est celle-là, sinon, c'est MAX_SPEED */
+  get speedUnit() {
+    let limit = this.limit.speed
+    if (!limit) limit = Vehicle.config.MAX_SPEED
+    return limit
+  }
+
+  /** Calcule la force à appliquer pour obtenir la direction souhaitée */
+  steer(output) {
+    let angle = map(output[Vehicle.OUTPUT_DIR], 0, 1, -PI, PI);
+    let speed = map(output[Vehicle.OUTPUT_MAG], 0, 1, 0, this.speedUnit);
+    angle += this.vel.heading();
+
+    // Calcul de la force à appliquer
+    // On calcule un vecteur à partir de l'angle et de la vitesse
+    // c'est la vitesse souhaitée
+    const targetVelocity = p5.Vector.fromAngle(angle);
+    targetVelocity.setMag(speed);
+
+    // force = vitesse souhaitée - vitesse actuelle
+    let force = p5.Vector.sub(targetVelocity, this.vel);
+  
+    // On limite la force
+    force.limit(this.limit.force);
+
+    // On applique la force
+    return force;
+  }
+  /** Décide de la consigne en fonction des capteurs */
+  decide(inputs, symmetrize) {
+    // symmetrize : code à venir
+    let list = [inputs]
     
-      // On limite la force
-      force.limit(this.maxforce);
-      // On applique la force
-      return force;
-    }
-  
-    // Dessin de la voiture
-    show() {
-      push();
-      translate(this.pos.x, this.pos.y);
-      const heading = this.vel.heading();
-      rotate(heading);
-      fill(255, 100);
-      rectMode(CENTER);
-      rect(0, 0, 10, 5);
-      pop();
-    }
-  
-    // Met en surbrillance la voiture
-    highlight() {
-      push();
-      translate(this.pos.x, this.pos.y);
-      const heading = this.vel.heading();
-      rotate(heading);
-      stroke(0, 255, 0);
-      fill(0, 255, 0);
-      rectMode(CENTER);
-      rect(0, 0, 20, 10);
-      pop();
+    let predict  = this.brain.predict(...list);
 
-      // On dessine aussi les rayons de la voiture en tête
-      for (let ray of this.rays) {
-        ray.show();
-      }
-      if (this.goal) {
-        this.goal.show();
-      }
+    return predict
+  }
+  
+  // C'est LE comportement de la voiture,
+  // elle va regarder autour d'elle et prendre des décisions
+  // en fonction de ce qu'elle voit
+  // Elle va ensuite appliquer une force pour se diriger
+  // vers le checkpoint suivant
+  // Elle va aussi éviter les murs
+  lookAndSteer(walls) {
+    const inputs = this.lookAround(walls);
+
+    // On demande au réseau de neurones de prédire la prochaine action
+    // output est un tableau à deux dimensions, deux neurones en sortie
+    // output[0] est la direction
+    // output[1] est la vitesse
+    
+    const outputs = this.decide(inputs);
+
+    return this.steer(outputs);
+  }
+
+  // Dessin de la voiture
+  show() {
+    push();
+    translate(this.pos.x, this.pos.y);
+    const heading = this.vel.heading();
+    rotate(heading);
+    fill(255, 100);
+    rectMode(CENTER);
+    rect(0, 0, 10, 5);
+    pop();
+  }
+
+  // Met en surbrillance la voiture
+  highlight() {
+    push();
+    translate(this.pos.x, this.pos.y);
+    const heading = this.vel.heading();
+    rotate(heading);
+    stroke(0, 255, 0);
+    fill(0, 255, 0);
+    rectMode(CENTER);
+    rect(0, 0, 20, 10);
+    pop();
+
+    // On dessine aussi les rayons de la voiture en tête
+    for (let ray of this.rays) {
+      ray.show();
+    }
+    if (this.goal) {
+      this.goal.show();
     }
   }
+}
