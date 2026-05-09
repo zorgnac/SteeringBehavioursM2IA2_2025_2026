@@ -131,7 +131,8 @@ class NeuralNetwork {
       });
     }
 
-    /** @typedef TrainingInfo
+    /** 
+     * @typedef {object} TrainingInfo
      * @prop {number} loss Valeur de la fonction de coût
     */
 

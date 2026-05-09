@@ -11,7 +11,7 @@ body {
 .Controls {
     padding: 1em;
     margin: auto;
-    width: 20em;
+    width: 30em;
 }
 .Column {
     margin-right: 2em;
@@ -27,7 +27,7 @@ body {
 }
 .Actions {
     margin: auto;
-    width: 20em;
+    /* width: 20em; */
 
 }
 .Hidden {

@@ -184,6 +184,7 @@ class Generation {
 
     if (broom) {
       delete broom.onFinished.broom
+      delete broom.onLap.broom
       delete broom.alwaysRun
       delete Generation.broom
     }
@@ -197,7 +198,9 @@ class Generation {
 
       broom.alwaysRun = true
       if (!broom.onFinished) broom.onFinished = {}
-      broom.onFinished.broom = (v) => this.killRunning(v)
+      if (!broom.onLap     ) broom.onLap      = {}
+      broom.onLap.broom = (v) => this.killSlower(v)
+      // broom.onFinished.broom = (v) => this.killRunning(v)
 
       if (broom.origin.list == 'running') break broom
       if (!this.lists.running.length) break broom
@@ -234,6 +237,27 @@ class Generation {
     }
     if (count)
       console.log(`killed ${count} (slow) vehicles`)
+  }
+  killSlower(killer) {
+    let count = 0
+    /** @type {Vehicle} */ let vehicle
+
+    let reached = false
+    for (vehicle of this.lists.running) {
+      if (vehicle != killer) {
+        if (!reached) continue
+        vehicle.kill('slow')
+        count++
+      }
+      reached = true
+    }
+    if (reached && this.lists.running.length-count <= 1)
+      if (!killer.finished)
+        killer.finished = 1
+
+    if (count)
+      console.log(`killed ${count} (slow) vehicles`)
+
   }
 
   /** Statistiques de génération
@@ -362,6 +386,7 @@ class Generation {
       if (running.length < this.total) this.total = running.length
       if (json.total) this.total = json.total
       if (json.voi)   Vehicle.config.OF_INTEREST = json.voi
+      if (json.lifespan) Vehicle.config.LIFESPAN = json.lifespan
       if (json.broom) Generation.config.BROOM = json.broom
     }
   }
@@ -479,7 +504,8 @@ class Generation {
     }
     // On aimerait recycler les voitures abandonnées,
     // mais dispose() est plutôt délicat à manipuler
-    for (let vehicle of previous) {
+    for (let entry of previous) {
+      let vehicle = entry.vehicle
       if (vehicle.kept)
         delete vehicle.kept;
       // else
@@ -506,8 +532,8 @@ class Generation {
 
     return retain
   }
-  /** On choisit un parent au hasard dans une liste
-   * 'parents'
+  /** On choisit un parent au hasard dans une table
+   * 'parents' de la forme {weight,vehicle}
    * Note : on peut passer 'null' comme parents pour
    * signifier une génération spontanée, sans ascendant
    * 
@@ -531,13 +557,13 @@ class Generation {
       let r = random(1);
       while (r > 0) {
         if (index >= N) break; // Garde-fou en cas d'erreur d'arrondi
-        r = r - parents[index].fitness;
+        r = r - parents[index].weight;
         index++;
       }
       index--;
 
       // l'heureux élu !
-      let vehicle = parents[index];
+      let vehicle = parents[index].vehicle;
       // console.log(`picked #${index}/${N} fitness=${vehicle.fitness}`)
       // on en fait une copie et on la mute
       child = vehicle.copy();
@@ -548,68 +574,79 @@ class Generation {
     return child;
   }
   
-  /** Calcule 'fitness' pour chaque voiture
+  /** Associe une probabilité de maternité à chaque voiture
+   * 
    * 
    * - l'argument 'lists' est une liste de tableaux de voitures, typiquement
    *   la liste Generation.lists
    * - au moins un de ces tableaux est non vide
    *
-   * - toutes les voitures se retrouvent dans l'unique tableau en retour, 
-   *   qui est ordonné ; la propriété 'fitness' de chaque
-   *   voiture est une probabilité sur la population ainsi
-   *   constituée 
+   * - toutes les voitures se retrouvent dans l'unique tableau en retour,
+   *   associées à leur probabilité (une entrée du tableau est un objet {weight,vehicle}).
+   *   Cette probabilité est calculée d'après vehicle.fitness
    * 
    * */
   static calculateFitnessForAllCars(lists) {
-    let vehicles = []
+    let table = []
     
+    // On réévalue fitness en prenant la résilience en compte ; 
+    // on met ca dans la table, sans toucher nous-même à
+    // vehicle.fitness
     for (let k in lists)
     {
       /** @type {Vehicle[]} */
       let list = lists[k];
       for (let vehicle of list) {
-        vehicles.push(vehicle)
         vehicle.calculateFitness();
+        let weight = vehicle.fitness
+        if (vehicle == Generation.broom)
+          weight = 1
+        table.push({weight: weight, vehicle: vehicle})
       }
     }
 
-    let N = vehicles.length; // Normalement, la même chose que TOTAL
+    let N = table.length
 
-    // On réévalue fitness en prenant la résilience en compte, puis
-    // on normalise en une probabilité. 
+    // On normalise en une probabilité. 
     let sum = 0;
     let fitness;
 
-    vehicles.sort(Vehicle.byFitness) // Utile dans le cas où ELDER est défini
+    for (let entry of table) {
+      sum += entry.weight;
+    }
+    let mean = 1.0 / N; // La moyenne sera 1/N après normalisation
 
-    for (let vehicle of vehicles) {
-      sum += vehicle.fitness;
-    }
     // Profitons de la normalisation pour calculer la variance
-    let sum2 = 0, mean = 1.0/N; // La moyenne est 1/N après normalisation
-    for (let vehicle of vehicles) {
-      fitness = vehicle.fitness / sum;
-      vehicle.fitness = fitness;
-      sum2 += pow(fitness - mean, 2)
+    let sum2 = 0
+    for (let entry of table) {
+      entry.weight /= sum;
+      sum2 += pow(entry.weight - mean, 2)
     }
-    let log = v=> {
+
+    // Un petit journal pour vérifier ce qu'on obtient...
+    let log = e=> {
+      let v = e.vehicle
       let str = v.id.padEnd(16)
-      str += ("" + round(v.fitness * 100)).padEnd(8)
+      str += ("" + round(e.weight * 100)).padEnd(8)
       str += (""+ round(v.stats.vel.mean * 100))
       str += "±"
       str += ("" + round(v.stats.vel.sigma * 100)).padEnd(8)
       return str
     }
     
-    console.log(vehicles.toSpliced(10).
-    map(v=>log(v)).
+    let byWeight = (b,a) => a.weight-b.weight
+    
+    console.log(table.toSorted(byWeight).toSpliced(10).
+    map(e=>log(e)).
     join('\n'))
 
     // Si la variance est nulle, on a probablement un bug (genre
     // on a changé de génération alors qu'on a pas fait de course)
-    console.log(`sum=${sum} len=${vehicles.length} mean=${round(mean*100,1)}% sigma=${round(sqrt(sum2)/N*100,1)}%`)
+    console.log(`sum=${sum} len=${N} mean=${round(mean*100,1)}% sigma=${round(sqrt(sum2)/N*100,1)}%`)
 
-    return vehicles
+    Generation.table = table
+
+    return table
   }
 
   declareKiller(track)
@@ -705,7 +742,7 @@ class Generation {
   static STATUS_FINISHED = 10;
   static STATUS_TRAINING = 20;
   
-  classifyFinished(elders)
+  classifyFinished()
   {
     let lists    = this.lists
     let finished = lists.finished
@@ -795,14 +832,14 @@ class Generation {
     for (let vehicle of stored)
     {
       if (vehicle.old > oldest) oldest = vehicle.old
+      let passed = vehicle.hasPassed(track)
       if (
-        vehicle.hasPassed(track) &&
+         passed &&
         vehicle != broom
         // || vehicle.lastTrack == track // TODO: Problème quand le circuit n'est pas tueur
       )
       {
         vehicle.passed[null] = 2
-        // vehicle.finished = -1
         count ++
       }
       else if (vehicle == broom)
@@ -1101,7 +1138,7 @@ class Generation {
       for (let k of Object.keys(lists)) {
         for (let i in lists[k]) {
           let vehicle = lists[k][i]
-          if (vehicle.serial == id || vehicle.name == id || vehicle.uuid == id)
+          if (vehicle == id || vehicle.serial == id || vehicle.name == id || vehicle.uuid == id)
           {
             vehicle.origin = { list: k, index: int(i) }
             found = vehicle

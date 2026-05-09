@@ -29,17 +29,21 @@ class Boundary {
     return createVector((this.a.x + this.b.x) * 0.5, (this.a.y + this.b.y) * 0.5);
   }
 
-  show() {
+  show(color) {
+    if (!color)       color = {}
+    
     push()
     if (this.killer) {
-      stroke      ("purple");
+      stroke      (color.killer? color.killer : "purple");
       strokeWeight(min(1+this.killer,10));
     }
     else if (this.wrong)
-      stroke(127);
+      stroke(color.wrong ? color.wrong : 127);
     else
-      stroke(255);
-    line(this.a.x, this.a.y, this.b.x, this.b.y);
+      stroke(color.standard ? color.standard : 255);
+
+    const {a,b} = this
+    line(a.x, a.y, b.x, b.y);
     pop()
   }
 
@@ -83,21 +87,21 @@ class Boundary {
   }
 
   /** 
-   * @typedef {object} Projection 
+   * @typedef {object} BoundaryProjection 
    * @property {p5.Vector} point point le plus proche dans [a,b]
-   * @property {number} d distance absolue à {@link Projection.point}
-   * @property {number} sign distance signée à la droite
-   * @property {string} end extrémité si {@link Projection.point} est a ou b ("a", "b" ou null)
+   * @property {number} d distance absolue à {@link BoundaryProjection.point}
+   * @property {number} sign distance signée à la droite (a,b)
+   * @property {string} end extrémité si {@link BoundaryProjection.point} est a ou b ("a", "b" ou null)
    * */
 
-  /** Projette un point 
+  /** Projette un point
    * 
    * @param {p5.Vector} p 
    * 
-   * @returns {Projection}
+   * @returns {BoundaryProjection}
   */
   project(p) {
-    /** @type {Projection} */let project = {sign: 0, d: null}
+    /** @type {BoundaryProjection} */let project = {sign: 0, d: null}
     let {sub, add, mult, dist, cross} = p5.Vector
 
 

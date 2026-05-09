@@ -10,6 +10,18 @@ class Track {
   static config = {
     /** Nombre de tours à parcourir                   */ LAPS  : 3,
     /** Difficulté                                    */ TRICKY: 3,
+    /** Nombre de segments                            */ LENGTH: 60,
+    /** Largueur de piste                             */ WIDTH : [40,60],
+    /** Couleurs  */
+    COLOR: {
+      start: "orange",
+      standard: "#4488",
+      away: 128,
+      wall: {
+        standard: "white",
+        killer: "purple"
+      }
+    }
   }
 
   /** @returns {String} Identifiant unique */
@@ -27,7 +39,7 @@ class Track {
    * @param {object} config JSON (optionnel) - voir {@link Track.fromJSON}
   */
   constructor(config) {
-    /** @type Track.config */   let def = this.constructor.config
+    const { LENGTH, LAPS, TRICKY } = this.constructor.config
 
     Track.serial ++;
 
@@ -46,14 +58,14 @@ class Track {
       depuis le dernier 'kills'
      */
     this.lastKill = 0;
-    this.laps   = def.LAPS;
-    this.tricky = def.TRICKY;
+    this.laps   = LAPS;
+    this.tricky = TRICKY;
     this.date   = new Date()
     
     this.checkpoints = [];
     this.uuid = Track.uuid()
 
-    const total = 60;
+    const total = LENGTH;
     let seed = { x: random(1000), y: random(1000) }
     
     // noiseSeed((new Date).getTime()) // A priori redondant avec start[XY] ci-dessus
@@ -163,6 +175,7 @@ class Track {
   // néanmoins
   static checkpointModel2(a, startX, startY, noiseMax, reverse)
   {
+    const {WIDTH} = Track.config
     let c, s;
     [ c, s ] = [ cos(a), sin(a) ]
 
@@ -176,7 +189,7 @@ class Track {
     // pour calculer une distance à l'origine
     // du canvas, ainsi qu'une largeur de piste
     let d = map(noise(xOff, yOff), 0, 1, 0.1, 0.5) // Distance à l'origine
-    let w = map(noise(xOff, yOff), 0, 1, 40, 60) // Longueur du segment
+    let w = map(noise(xOff, yOff), 0, 1, WIDTH[0], WIDTH[1]) // Longueur du segment
 
     const [x1, x2, y1, y2] = Track.elliptic(c, s, d, w)
 
@@ -294,67 +307,174 @@ class Track {
 
     return walls;
   }
+
+  closestWall(p) {
+    // let segment = Track.closestPoint(p, this.checkpoints)
+    let closest = Track.closestWall(p, this.walls/*, 2*segment.index*/)
+    return closest
+  }
+  static closestPoint(p, segments, ends) {
+    if (!ends) ends = ["a", "b"]
+    let closest = { d: Infinity, index: -1, end: null}
+    for (let i in segments) {
+      let segment = segments[i]
+      
+      for (let end of ends) {
+        let d = p.dist(segment[end])
+        if (d >= closest.d) continue
+
+        closest.d = d
+        closest.end = end
+        closest.index = int(i)
+      }
+    }
+    return closest
+  }
+
+  /**
+   * Mur le plus proche
+   * 
+   * @param {p5.Vector} p 
+   * @param {Boundary[]} walls Murs d'un circuit
+   * @param {?boolean|int} index Ne pas utiliser ; voir le code
+   * @returns 
+   */
+  static closestWall(p, walls, index) {
+    /*
+      * Si INDEX est donné, WALLS doit être orienté et ordonné. INDEX est soit 
+      * l'indice d'un mur dont on se sait proche (par exemple déduit d'un checkpoint),
+      * soit `true`, auquel cas on considère le point d'extrémité le plus proche parmi
+      * WALLS identifie un tel mur. La recherche est alors concentrée autour de ce
+      * point. Ca donne le résultat souvent, mais pas toujours. Introduit
+      * pour mesurer à quel point le parcourt exhaustif de tous les murs
+      * est coûteux
+      * */
+
+    /**@type TrackProjection*/let closest = { d: Infinity, src: p, index: -1, pivot: 0, end: null }
+    let N = walls.length
+
+    let accept = (i, project) => {
+      closest.d = project.d
+      closest.index = i
+      closest.tgt = project
+    }
+
+    let check = (i) => {
+      if (i < 0) i += N
+      let within = i % N
+      let wall = walls[within]
+      let project = wall.project(p)
+      if (project.d < closest.d) 
+        accept(within, project)
+    }
+
+    check: {
+      if (index === true)
+        index = Track.closestPoint(p, walls, ["a"]).index
+
+      // Si on sait où chercher (et que WALLS est ordonné), on peut aller vite
+      if (index) {
+        closest.pivot = index
+        for (let di = -5; di <= 5; di++)
+          check(index + di)
+        break check
+      }
+      for (let i = 0; i < N; i++)
+        check(i)
+    }
+
+    closest.wall = [ walls[closest.index] ]
+
+    return closest
+  }
+
+  /** Mur ou coin le plus proche
+   * 
+   * @typedef {object} TrackProjection
+   * @property {number} d Distance signée
+   * @property {int} index Indice du mur dans la liste des murs
+   * @property {p5.Vector} src Point de mesure
+   * @property {BoundaryProjection} tgt Détails de projection
+   * @property {Boundary[]} wall Mur le plus proche (2 si un coin, ordonnés dans le sens de parcourt)
+   * @property {string} end Code de projection
+   * @property {int} pivot Indice du mur pivot, qui a servi de base à la recherche détaillée
+   */
+
   /** Distance signée d'un point au circuit
    * 
    * @param {p5.Vector} p point du canvas
    * @returns {Number} distance au circuit ; si négatif, P est hors piste
    */
   distance(p) {
-    return Track.distance(p, this.walls)
+    return Track.project(p, this.walls).d
   }
-  static distance(p, walls) {
+  /** Mur ou coin le plus proche d'un point
+   * 
+   * Les murs de WALLS doivent doivent être ceux d'un
+   * circuit : il sont ordonnés et
+   * orientés dans le sens de parcourt, en alternant
+   * intérieur et extérieur.
+   * 
+   * @param {p5.Vector} p Point de 
+   * @param {Boundary[]} walls 
+   * @returns {TrackProjection}
+   */
+  static project(p, walls) {
     let N = walls.length
     
-    let closest = {d: Infinity, index: -1}
+    let closest = Track.closestWall(p, walls)
     let error = m => {
       console.log(m)
       closest.type = "wallInfo"
       closest.message = m
       throw closest
     }
-    let accept = (i,project) => {
-      return {
-        d: project.d,
-        index: i,
-        wall: [walls[i]],
-        src: p,
-        tgt: project
-      }
+    let accept = (i,/**@type {BoundaryProjection}*/project) => {
+      closest.index = i
+      closest.d     = project.d
+      closest.wall  = [walls[i]]
+      closest.tgt   = project
+
+      return closest
     }
 
-    for (let i = 0; i < N; i++)
-    {
-      let wall = walls[i]
-      let project = wall.project(p)
-      if (project.d < closest.d) closest = accept(i,project)
-    }
     let end = closest.tgt.end
 
+    end:
     if (!end) 
       closest.d = closest.tgt.sign
 
     else {
-      let i = closest.index + 2
+      // On est sur un coin. On trouve le deuxième mur et on
+      // ordonne dans le sens de parcourt. 
+      // On suppose d'abord que le mur qu'on a déjà trouvé (closest.wall[0]) est
+      // effectivement le premier ; on ajuste dans le bloc 'fix' si ce n'est
+      // pas le cas
+      end = end + closest.index % 2 // La parité de l'indice donne le côté de la piste
+      let di = +2
+      let i = closest.index + di
       if (i >= N) i -= N
-      end = end + closest.index % 2
       let other = walls[i]
       
       fix: {
-        let wall, project, fix = closest.index
+        let wall, project
 
         switch (end) {
-          case "b1": if (fix != 1) error(`unexpected ${end}`); break
-          case "a0": if (fix != 0) error(`unexpected ${end}`); break
-          default:
-            break fix
+          case "b0":
+          case "a1": break fix
+          case "b1": 
+          case "a0": di = -2; break
+          default: throw `unexpected end code`
         }
 
-        i = N + fix - 2
+        i = closest.index % 2 + di
+        if (i < 0)  i += N
+
         wall = walls[i]
         other = closest.wall[0]
-        project = wall.project(p)
-        end = project.end + fix
-        closest = accept(i, project)
+        project = wall.project(p) // remplace wall[0]
+        accept(i, project)
+        end = project.end + closest.index % 2
       }
       
       closest.end = end
@@ -365,9 +485,13 @@ class Track {
       switch (end) {
         case "b0": k = "a"; break 
         case "a1": k = "b"; break
+          
         default:
           error(`unexpected end=${end}`)
       }
+      if (!closest.wall[0])
+        error(`no closest`)
+
       let sign = other.project(closest.wall[0][k]).sign
       if (sign > 0) closest.d = -closest.d;
     }
@@ -510,9 +634,10 @@ class Track {
   }
   /** Dessine le circuit sur le canvas de P5 */
   show() {
+    const { COLOR } = Track.config
     // On dessine les checkpoints du circuit
-    let color = "orange" // Couleur de la ligne d'arrivée
-    let away  = 128
+    let color = COLOR.start // Couleur de la ligne d'arrivée
+    let away  = COLOR.away
     for (let point of this.checkpoints) {
       push();
       // stroke      (point.killer ? "purple"            : color);
@@ -522,13 +647,13 @@ class Track {
 
       // un checkpoint est une ligne entre cp.a et cp.b
       line(point.a.x, point.a.y, point.b.x, point.b.y);
-      color = "blue" // Couleur des autres checkpoints
+      color = COLOR.standard // Couleur des autres checkpoints
       pop();
     }
     
     // on dessine les murs du circuit
     for (let wall of this.walls) {
-      wall.show();
+      wall.show(COLOR.wall);
     }
   }
 

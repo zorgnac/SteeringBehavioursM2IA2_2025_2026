@@ -64,7 +64,7 @@ function setup() {
   if (def.ALWAYS_KILLER) {
     let always  = def.ALWAYS_KILLER
     let conf    = Track.config
-    alwaysKiller = [conf.TRICKY, always[1], always[2]]
+    alwaysKiller = [always[0], always[1], conf.TRICKY]
     conf.TRICKY = always[0]
   }
 
@@ -94,6 +94,7 @@ function setup() {
   UI.genStats(currentGen.stats);
 
   killerTest.init(currentGen.lists.running)
+  UI.testTable.html(killerTest.htmlInfo(track))
 
   UI.raceInfo()
   // UI.brainInfo()
@@ -128,31 +129,33 @@ function nextTrack(noprepare)
   currentTrack = next;
 
   if (!noprepare) {
-    currentStats = currentGen.prepare(currentTrack)
+    currentGen.prepare(currentTrack)
   }
 }
 
 function onRunningException(x)
 {
-  let caught
-  if (x.message) {
-    if (x.type == UI)
-    {
-      UI.message(x.message)
-      caught = true
-    }
-    else {
+  caught: {
+    if (x.message) {
+      if (x.type == UI) {
+        UI.message(x.message)
+        break caught
+      }
       UI.pause(x.message)
-      if (x.type && window[x.type]) {
-        window[x.type](x)
-        caught = true
+      if (x.type) {
+        if (window[x.type]) {
+          window[x.type](x)
+          break caught
+        }
+        if (UI[x.type]) {
+          UI[x.type](x)
+          break caught
+        }
       }
     }
-  }
-  else {
-    UI.pause(`unknown '${x}'`)
-  }
-  if (!caught) {
+    else {
+      UI.pause(`unknown '${x}'`)
+    }
     console.log(x)
     throw x
   }
@@ -241,6 +244,7 @@ function declareKiller()
     if (known) break no
 
     console.log(`killer: ${currentTrack}`)
+    killerTest.accept(currentTrack)
     let kill = `${currentTrack.kills}-t${currentTrack.serial - Track.offset}`
     let savedGen   = `k${kill}.gen`;
     let savedTrack = `k${kill}.trk`;
@@ -289,10 +293,10 @@ function checkAlwaysKiller()
 {
   if (alwaysKiller) {
     if (currentTrack.declareKiller(currentGen)) {
-      console.log(`alwaysKiller(${alwaysKiller}): ${currentTrack}`)
+      console.log(`alwaysKiller(${alwaysKiller}): ${currentTrack.tricky}`)
       if (currentTrack.tricky >= alwaysKiller[2]) {
         console.log('done alwaysKiller')
-        Track.config.TRICKY = alwaysKiller[0]
+        Track.config.TRICKY = alwaysKiller[2]
         alwaysKiller = null
         UI.testCheck.checked(true)
       }
@@ -309,7 +313,7 @@ function nextRace()
 
   {
     const {FROZEN, FINISHED} = Generation.config
-    
+    const {MIN_ELDERS} = Test.config
 
     if (purge && Generation.train)
     {
@@ -334,9 +338,15 @@ function nextRace()
       declareKiller()
     }
  
+    if (FROZEN && stored < currentGen.total) {
+      currentGen.total = stored
+      if (stored < MIN_ELDERS) {
+        UI.pause(`Frozen generation is low`)
+      }
+    }
     // Sauf contre-indication, on ne change de circuit que si toutes voitures ont terminé
     if (stored >= currentGen.total || FROZEN || !FINISHED)     {
-      if (!purge || test)
+      // if (!purge || test) // ce test ne fonctionne pas si purge et stored == total
         nextTrack(true);
     }
 
@@ -348,6 +358,7 @@ function nextRace()
     let stats = currentGen.prepare(currentTrack);
     UI.genStats(stats);
     UI.raceInfo()
+    UI.testTable.html(killerTest.htmlInfo(currentTrack))
   }
 
   // console.log(UI.genCheck)

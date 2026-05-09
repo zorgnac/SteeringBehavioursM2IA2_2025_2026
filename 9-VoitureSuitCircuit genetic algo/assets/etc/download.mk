@@ -23,9 +23,10 @@ all	:
 	do
 	  [ -f "$$f" ] && {
 	     mv "$$f" "$${f##*$P}"
-	     echo "$${f##*$P}"
+	     ls -lh "$${f##*$P}"
 	  }
-	done
+	done | sort -k 8 |
+	awk 'BEGIN {OFS="\t"} {print ($$5, $$8, $$9)}'
 	:
 
 %.json	: ${SRC}$P%.json

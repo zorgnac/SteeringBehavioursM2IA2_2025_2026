@@ -42,6 +42,11 @@ class Ray {
   
     // On regarde si le rayon intersecte un mur
     // si oui on renvoie le point d'intersection
+    /**
+     * 
+     * @param {Boundary} wall 
+     * @returns {p5.Vector}
+     */
     cast(wall) {
       const x1 = wall.a.x;
       const y1 = wall.a.y;

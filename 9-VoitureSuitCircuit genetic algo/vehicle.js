@@ -162,13 +162,18 @@ class Vehicle {
      *   bien se débrouiller en imaginant qu'elle est
      *   à vitesse maximale, et agir en conséquence.
       */
-    CHANNELS        : {},// 
+    CHANNELS        : {},// { 'v2': 25, 'h[0]*v2': 25 }
 
     // Constantes de calcul de fitness
     /** Poids de la vitesse au tour */ WEIGHT_SPEED    : 1           ,
 
     /** Nom de la voiture d'intérêt         */ OF_INTEREST  : 'broom',
-    /** Voir {@link Generation.show}        */ FOCUS_VOI    : true
+    /** Voir {@link Generation.show}        */ FOCUS_VOI    : true,
+
+    COLOR: {
+      goal: null,
+      old: "red"
+    },
 }
 
   static serial = 0; // Numéro de série du dernier bolide
@@ -195,7 +200,12 @@ class Vehicle {
   /** Action déclenchée quand la voiture termine un circuit 
    * @type {(v:Vehicle)=>null}
   */
+  static onFinished = {}
   onFinished;
+  /** Action déclenchée quand la voiture termine un tour 
+   * @type {(v:Vehicle)=>null}
+  */
+  onLap;
 
   /**
    * Constructeur selon configuration 
@@ -243,6 +253,9 @@ class Vehicle {
 
     /** Statistiques de parcourt */
     this.stats   = { vel: {sum1: 0, sum2: 0, mean: 0, sigma: 0}, N: 0 }
+    // Niveau d'adaptation (fitness).
+    // Évalué en fin de course, puis réévalué (comme probabilité strictement positive) au changement de génération
+    /** Niveau d'adaptation (mérite)         */ this.fitness = 0;
 
     /** Circuits (tueurs) passés 
      * @type {Object}
@@ -295,9 +308,6 @@ class Vehicle {
   prepare(track, alwaysRun) { 
     if (!track) throw 'mandatory argument TRACK is missing'
 
-    // Niveau d'adaptation (fitness).
-    // Évalué en fin de course, puis réévalué (comme probabilité strictement positive) au changement de génération
-    /** Niveau d'adaptation (mérite)         */ this.fitness = 0;
 
     /** Nombre de checkpoints passés         */ this.points = 0;
     /** Vrai (ou raison) si hors-course      */ this.dead = false;
@@ -433,7 +443,7 @@ class Vehicle {
 
     {
       let vel = this.vel ? round(this.vel.mag()/REF_SPEED*100,0) : 0
-      let score = this.fitness ? round(this.fitness*100,0) : this.points;
+      let score = this.points // this.fitness ? round(this.fitness*100,0) : this.points;
       str = `${this.id} [${score}]`
 
       str += ` vel=${vel}% [${vm}±${vs} ${vl}]`
@@ -507,6 +517,7 @@ class Vehicle {
     set_if([ 
       "ahead",
       "channels",
+      "weights",
       "parentUuid", 
       "qualified" 
     ])
@@ -740,7 +751,8 @@ class Vehicle {
       // si on dépasse le temps de vie
       // on meurt, on tue la voiture
       this.counter++;
-      if (this.counter > LIFESPAN) {
+      let track = this.track.checkpoints.length
+      if (this.counter > LIFESPAN*60/track) {
         this.kill('abandon');
       }
 
@@ -785,11 +797,16 @@ class Vehicle {
   }
 
   /** Ajustements supplémentaires quand on boucle un tour */
-  onlap() {
+  acceptLap() {
     this.speed = pow(2,this.track.length/this.total)-1
     this.total = 0
     this.event = 'lap';
     this.laps++
+
+    if (this.onLap) {
+      for (let k in this.onLap) { this.onLap[k](this) }
+    }
+
     if (this.laps >= this.track.laps) {
       Vehicle.rank++
       this.finished = Vehicle.rank
@@ -798,7 +815,7 @@ class Vehicle {
         this.champion += 1 / Vehicle.rank
 
       if (Vehicle.onFinished) {
-        for (let k in Vehicle.onFinished) Vehicle.onFinished(this)
+        for (let k in Vehicle.onFinished) Vehicle.onFinished[k](this)
       }
       if (this.onFinished) {
         for (let k in this.onFinished) {this.onFinished[k](this)}
@@ -832,7 +849,7 @@ class Vehicle {
         this.event = 'checkpoint';
         this.counter = 0;
         if (this.index == 1) { // Un nouveau tour bouclé
-          this.onlap()
+          this.acceptLap()
         }
       }
     }
@@ -910,27 +927,17 @@ class Vehicle {
     const inputs = [];
     this.seen = [];
 
-    let closest
-    try {
-      closest = Track.distance(this.pos, walls)
-    }
-    catch (x) {
-      if (x.type == "wallInfo")
-        x.vehicle = this
-      throw x
-    }
+    /** @type {TrackProjection} */ let closest = { d: Infinity, wall: null }
+
     let weighted = this.options["weight-direct"]
     let direct = this.options["direct"] ? "direct" : (this.options["side-direct"] || weighted) ? "side" : null
     if (direct)
       this.direct = []
 
-    if (closest.d < this.limit.safe)
-      this.kill('crash', closest.wall, closest.d);
-
     // Pour chaque rayon
     for (let i = 0; i < this.rays.length; i++) {
       const ray = this.rays[i];
-      let closest = {point: null, d: Infinity};
+      let cast = {point: null, d: Infinity};
       // let record = this.limit.sight;
 
       // Pour chaque mur
@@ -939,22 +946,28 @@ class Vehicle {
         const point = ray.cast(wall);
         if (point) {
           const d = p5.Vector.dist(this.pos, point);
-          if (d < closest.d) {
-            closest.d  = d;
-            closest.wall = wall
-            closest.point = point
+          if (d < cast.d) {
+            cast.d  = d;
+            cast.wall = wall
+            cast.point = point
           }
         }
       }
 
+      // On se souvent particulièrement du plus court des rayons
+      if (cast.d < closest.d) {
+        closest.d = cast.d
+        closest.wall = [ cast.wall ]
+      }
+
       // On se rappelle le point d'intersection pour le dessiner
       // sur le canvas
-      this.seen[i] = (closest.d <= this.limit.sight)  ? closest.point : null;
+      this.seen[i] = (cast.d <= this.limit.sight)  ? cast.point : null;
 
       // On met la couche de neurone en entrée avec des valeurs entre 0 et 1
       // Rappel, on a i rayons (on est dans une boucle for sur les rayons
       // et on a une couche d'entrée avec autant de neurones que de rayons
-      let input = map(closest.d, 0, this.limit.sight, 1, 0)
+      let input = map(cast.d, 0, this.limit.sight, 1, 0)
       if (input < 0) input = 0
       if (input > 1) input = 1
       inputs.push(input) ;
@@ -963,15 +976,15 @@ class Vehicle {
       // On garde dans this.direct le point "c" du mur le
       // le plus proche ; "c" indique l'orientation du mur, que l'on
       // transforme en un "sign" (0 ou 1)
-      if (!closest.wall) this.direct[i] = { point: this.pos, sign: 0.5 }
+      if (!cast.wall) this.direct[i] = { point: this.pos, sign: 0.5 }
       else {
-        let c = closest.wall.c
+        let c = cast.wall.c
         let pc = p5.Vector.sub(c, this.pos)
-        let pp = p5.Vector.sub(closest.point, this.pos)
+        let pp = p5.Vector.sub(cast.point, this.pos)
         let sign = p5.Vector.cross(pc, pp).z
-        sign = sign > 0 ? 1 : 0
-          if (weighted)
-            sign = (sign-0.5)*input + 0.5
+        sign = sign > 0 ? 1 : 0;
+        if (weighted)
+          sign = (sign-0.5)*input + 0.5
         
         this.direct[i] = { point: c, sign: sign }
       }
@@ -983,6 +996,26 @@ class Vehicle {
         for (let side of this.direct) {
           inputs.push(side.sign)
         }
+    }
+
+    if (closest.wall) {
+      let project = closest.wall[0].project(this.pos)
+      // On meurt si on est un peu trop dans le décor 
+      if (project.sign < this.limit.safe)
+        this.kill('crash', closest.wall, closest.d);
+      else
+        this.lastWall = closest.wall[0]
+    }
+    // Si on ne voit voit plus rien, on a du passer
+    // au travers d'un mur et se retrouver à l'air
+    // libre ; on meurt aussi
+    else {
+      if (this.lastWall) {
+        let project = this.lastWall.project(this.pos)
+        this.kill('crash', [this.lastWall], project.sign)
+      }
+      else 
+        this.kill('crash')
     }
 
     // Une entrée supplémentaire pour la vitesse, ou plus
@@ -1185,7 +1218,7 @@ class Vehicle {
       throw 'empty data'
     }
 
-    /** @typedef TrainingData Donnée d'entraînement
+    /** @typedef {object} TrainingData Donnée d'entraînement
      * @property {number[][]} inputs
      * @property {number[][]} outputs
      * @property {number} loss Valeur de fonction de coût
@@ -1289,8 +1322,9 @@ class Vehicle {
       line(0, 0, mag * this.acc.x / MAX_FORCE, mag * this.acc.y / MAX_FORCE);
       pop();
     }
-    if (this.goal) {
-      this.goal.show();
+    const {COLOR} = Vehicle.config
+    if (this.goal && COLOR.goal) {
+      this.goal.show(COLOR.goal);
     }
   }
 

@@ -3,7 +3,7 @@
   
   "vehicles": [
         {
-  "name": "h9x6c1f1",
+  "name": "h9-f1.5",
   "version": 6,
   "ahead": 0,
   "channels": {},
@@ -11,12 +11,12 @@
   "angle": 15,
   "old": 0,
   "beta": 0,
-      "hidden": [ 9, 6 ],
-  "uuid": "seed-h9x6c1f1",
+      "hidden": [ 9 ],
+  "uuid": "seed-h9-f1.5",
   "dead": false,
   "limit": {
     "speed": 0,
-    "force": 0.1,
+    "force": 0.15,
     "sight": 300,
     "safe": -0.01
   },
@@ -34,10 +34,7 @@
     }
   },
   "options": {
-    "ahead-distance": false,
     "activation": "relu",
-    "behind": false,
-    "direct": false,
     "side-direct": true
   }
     }

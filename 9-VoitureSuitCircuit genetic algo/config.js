@@ -127,13 +127,15 @@ CONFIG = new Asset(CONFIG)
         //  'initialTracks',
     ]
 
-    // def.TRAINING = 'seed-c::h9x6c1-f05'
+    // def.TRAINING = 'seed-c::f1.5'
     // def.ALWAYS_KILLER = [ 1.5, 0.5 ]
 
     def.CHECK_TEST = true
     // def.CHECK_PURGE = true
     // def.CHECK_PAUSE = true
     def.RATES = [0, 1, 2, 5, 10, 15, 20, 30];
+
+    def.SPEED = 2
 }
 
 // ----------------------------------------------------
@@ -150,8 +152,10 @@ CONFIG.Vehicle = function () {
 CONFIG.Track = function () {
     let def = Track.config;
 
-    def.TRICKY = 6.5; 3; 
+    def.TRICKY = 6.5; 3;
     def.LAPS = 2;
+    def.LENGTH = 240
+    def.WIDTH = [ 20,50 ]
 
     return CONFIG.Track
 }
@@ -173,7 +177,7 @@ CONFIG.Generation = function() {
 CONFIG.Test = function() {
     let def = Test.config
 
-    def.MIN_ELDERS = 5
+    def.MIN_ELDERS = 15
     def.MAX_TRACKS = 10; 0;
     def.FULL = true
 

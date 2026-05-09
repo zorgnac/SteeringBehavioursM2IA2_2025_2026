@@ -304,22 +304,20 @@ class Test {
     message.push(`      + ${duration}`)
     console.log(message.join('\n'))
 
-    if (currentGen.tested) {
-      console.warn(`already tested ${currentGen.tested}`)
-      currentGen.tested++
-    }
 
     currentGen.minRunning = this.minRunning
 
+    // Point de sauvegarde
     {
-      let base = `gen${currentGen.serial}`
-      if (currentGen.tested) base = base + '-' + currentGen.tested
-      saveGeneration(base, ['stored', 'finished']); // 'passed'
+      let suffix = '' + currentGen.serial
+      if (currentGen.saved) suffix += '-' + currentGen.saved
+      let base = 'gen' + suffix
+      
+      saveGeneration('gen' + suffix, ['stored', 'finished']); // 'passed'
       if (removed)
-        saveGeneration(base + "-u", ['unqualified'])
-      save(message, 'mb-' + base + `.txt`)
-      if (!currentGen.tested) currentGen.tested = 1
-      // currentGen.tested++
+        saveGeneration('unk' + suffix, ['unqualified'])
+      save(message, Asset.PREFIX + 'gen' + suffix + `.txt`)
+      saveKillers('kil' + suffix)
     }
 
     for (let killer of this.killers) {
