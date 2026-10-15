@@ -76,7 +76,8 @@ class Test {
 
     /** Nombre de passes par circuit @type {Object.<string,int>}   */ this.passed= { }
     /** Nombre vétérans par circuit  @type {Object.<string,int>}   */ this.elders= { }
-    /** Derniers tués par circuit    @type {Object.<string,int>}   */ this.kills = null
+    // CODEX : Les compteurs existent même avant le premier test : la découverte de circuits peut commencer immédiatement.
+    /** Derniers tués par circuit    @type {Object.<string,int>}   */ this.kills = {}
     /** Nombre de tours par circuit  @type {Object.<string,int>}   */ this.laps = null
 
     /** Sélection de circuits à tester @type {Track[]} */ this.killers = []
@@ -240,6 +241,7 @@ class Test {
     /** Numéro de série la génération de départ */ this.startGen = generation.serial
 
     /* On limite le nombre de circuits si le nombre de vétérans est suffisant */
+    // CODEX : Avec assez de vétérans, le test peut porter sur un sous-ensemble ; FULL ne désactive pas cette sélection.
     if (def.MAX_TRACKS && generation.countElders >= def.MIN_ELDERS) {
       let i = 0
       this.allKillers = killers
@@ -286,6 +288,7 @@ class Test {
     if (this.onDone)
       this.onDone(message)
 
+    // CODEX : qualified signifie réussite du lot testé ; elder dépend de tous les circuits de Track.killers.
     currentGen.markQualified(this.killers)
     let count = currentGen.countQualifiedOrElders
     if (count < currentGen.total)
@@ -313,10 +316,11 @@ class Test {
       if (currentGen.saved) suffix += '-' + currentGen.saved
       let base = 'gen' + suffix
       
+      // CODEX : Les sauvegardes de qualification deviennent des archives en mémoire, exportables depuis la nouvelle UI.
       saveGeneration('gen' + suffix, ['stored', 'finished']); // 'passed'
       if (removed)
         saveGeneration('unk' + suffix, ['unqualified'])
-      save(message, Asset.PREFIX + 'gen' + suffix + `.txt`)
+      Archives.add('bilan-qualification-' + suffix, message)
       saveKillers('kil' + suffix)
     }
 

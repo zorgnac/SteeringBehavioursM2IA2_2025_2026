@@ -104,6 +104,7 @@ class NeuralNetwork {
           let newTensor = tf.tensor(values, shape);
           mutatedWeights[i] = newTensor;
         }
+        // CODEX : Même si aucun poids n'a été tiré, on force une modification : un enfant n'est pas un clone exact.
         if (!mutated)
         {
           let i = int(random(weights.length));
@@ -163,9 +164,13 @@ class NeuralNetwork {
         info.duration = Generation.duration(info.start, new Date)
       }
       const size = 32
+      // CODEX : Il s'agit des epochs TensorFlow, sans rapport avec Speed (cycles physiques par image).
+      // CODEX : Moins de 32 observations produit ici 0 epoch ; ce cas n'est pas traité.
       const epochs = int(inputs.length / size)
 
       /** @type TrainingInfo */ this.trainInfo =  {
+        // CODEX : Le nombre d'observations reste visible pendant le fit, après transfert des données.
+        samples: inputs.length,
         start: new Date,
         batch: 0,
         epoch: 0,
@@ -180,12 +185,20 @@ class NeuralNetwork {
         callbacks: {onBatchEnd}
       }
 
-      return model.fit(tf.tensor(inputs), tf.tensor(outputs), config).
-        then(onDone)
+      // CODEX : Les données de fit sont possédées par cet appel et libérées en succès comme en erreur.
+      const xs = tf.tensor(inputs), ys = tf.tensor(outputs);
+      return model.fit(xs, ys, config).then(onDone).catch(error => {
+        if (typeof UI !== 'undefined') {
+          if (typeof currentGen !== 'undefined' && currentGen) currentGen.status = Generation.STATUS_FINISHED;
+          UI.error(error);
+        }
+        return NaN;
+      }).finally(() => { xs.dispose(); ys.dispose(); })
     }
 
     /* Persistance du cerveau */
 
+    // CODEX : Les tenseurs sont exportés en shape + valeurs ; la reprise reconstruit le réseau et ses poids.
     toJSON() {
       let json = {
         inputs : this.input_nodes,
@@ -234,13 +247,11 @@ class NeuralNetwork {
       // this.model.dispose();
       this.model = this.createModel();
 
-      const weights = [];
-      for (let weight of json.weights) {
-        let tensor = tf.tensor(weight.values, weight.shape);
-        weights.push(tensor);
-      }
-
-      this.model.setWeights(weights);
+      // CODEX : setWeights copie les valeurs ; les tenseurs temporaires du JSON peuvent être libérés.
+      tf.tidy(() => {
+        const weights = json.weights.map(weight => tf.tensor(weight.values, weight.shape));
+        this.model.setWeights(weights);
+      });
     }
 
     dispose() {

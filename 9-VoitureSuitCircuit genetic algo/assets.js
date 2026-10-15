@@ -17,6 +17,7 @@ class Asset {
     this.concat(def, true)
   }
 
+  // CODEX : Les clés JSON déterminent le type chargé ; ce n'est pas le nom du fichier.
   static make(def) {
     let object
 
@@ -86,6 +87,7 @@ class Asset {
     for (let name of names) {
       name = name.replace(/[.]json$/, "")
       console.log(`loading ${name}`)
+      // CODEX : La reprise lit assets/ ; les sauvegardes téléchargées doivent y être copiées manuellement.
       let json = loadJSON(`assets/${name}.json`, (json) => on_one(json,name))
       // console.log(json)
       list.push(json)
@@ -118,6 +120,7 @@ class Asset {
   }
 }
 
+// CODEX : Sauvegarde des voitures (poids, capteurs, historique), pas de la course en cours ni de CONFIG.
 function saveGeneration(name, lists)
 {
   let gen = currentGen
@@ -135,7 +138,8 @@ function saveGeneration(name, lists)
 
   name = name.replace(/[.]json$/, "")
 
-  saveJSON(json, `${Asset.PREFIX}${name}.json`);
+  // CODEX : Les événements moteur créent des archives en mémoire ; l'utilisateur choisit quand exporter.
+  Archives.add(name, json);
   return name
 }
 
@@ -146,7 +150,8 @@ function saveKillers(name, killers)
   name = name.replace(/[.]json$/, "")
 
   let json = { "killers": killers }
-  saveJSON(json, `${Asset.PREFIX}${name}.json`);
+  // CODEX : Les événements moteur créent des archives en mémoire ; l'utilisateur choisit quand exporter.
+  Archives.add(name, json);
 }
 
 function saveTrack(name, track)
@@ -154,12 +159,14 @@ function saveTrack(name, track)
   if (!track) track = currentTrack
   if (!name) name = `track${currentTrack.serial - Track.offset}`
 
-  saveJSON(track, `${Asset.PREFIX}${name}.json`);
+  Archives.add(name, track.toJSON());
 }
 
 
 function saveAll(keys)
 {
+  // CODEX : Le bouton Save ne demande par défaut que génération + tueurs, malgré son infobulle.
+  // CODEX : Pour inclure le circuit courant : saveAll({gen: true, kill: true, track: true}).
   if (!keys) keys = {gen: true, kill: true}
   let name
   if (keys.gen)   name = saveGeneration()

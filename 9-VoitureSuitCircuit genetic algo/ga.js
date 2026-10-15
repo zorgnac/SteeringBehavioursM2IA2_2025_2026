@@ -199,6 +199,7 @@ class Generation {
       broom.alwaysRun = true
       if (!broom.onFinished) broom.onFinished = {}
       if (!broom.onLap     ) broom.onLap      = {}
+      // CODEX : Le balai agit à chaque tour via killSlower ; l'action à l'arrivée est commentée.
       broom.onLap.broom = (v) => this.killSlower(v)
       // broom.onFinished.broom = (v) => this.killRunning(v)
 
@@ -239,6 +240,8 @@ class Generation {
       console.log(`killed ${count} (slow) vehicles`)
   }
   killSlower(killer) {
+    // CODEX : Le balai classe la progression au passage de tour, indépendamment des tableaux UI.
+    this.lists.running.sort(Vehicle.byPoints);
     let count = 0
     /** @type {Vehicle} */ let vehicle
 
@@ -383,6 +386,7 @@ class Generation {
     }
     if (array.length == 1) {
       json = array[0]
+      // CODEX : Sans champ JSON total, une petite population chargée reste petite ; pas de remplissage immédiat.
       if (running.length < this.total) this.total = running.length
       if (json.total) this.total = json.total
       if (json.voi)   Vehicle.config.OF_INTEREST = json.voi
@@ -491,6 +495,7 @@ class Generation {
       }
     }
     // Pour les autres, on change de génération
+    // CODEX : Test (case UI) laisse cette reproduction active ; seul FROZEN interdit les nouveaux individus.
     if (!Generation.config.FROZEN) {
       for (; i < this.total; i++)
       {
@@ -566,6 +571,7 @@ class Generation {
       let vehicle = parents[index].vehicle;
       // console.log(`picked #${index}/${N} fitness=${vehicle.fitness}`)
       // on en fait une copie et on la mute
+      // CODEX : Reproduction à un parent : copie du cerveau puis mutation, sans croisement de deux parents.
       child = vehicle.copy();
       child.mutate(vehicle);
       child.parent = index;
@@ -749,7 +755,7 @@ class Generation {
     let stored   = lists.stored
 
     if (lists.running.length)
-      throw new Exception(`Race is not done running=${lists.running.length}`)
+      throw new Error(`Race is not done running=${lists.running.length}`)
 
     let N = finished.length
     // stored = stored.concat(finished)
@@ -791,7 +797,8 @@ class Generation {
     // Nombre de cycles par frame ("époques par frame")
     for (let n = 0; n < cycles; n++) {
       // Pour chaque voiture
-      for (let vehicle of running) {
+      // CODEX : Le balai peut trier running pendant un tour ; ce pas conserve une liste de participants stable.
+      for (let vehicle of [...running]) {
         if (vehicle.dead || vehicle.finished) continue;
 
         // this.started = true;
@@ -878,8 +885,9 @@ class Generation {
       throw 'argument track is mandatory';
       
     if (this.status != Generation.STATUS_FINISHED)
-      throw new Exception('Generation is not completed')
+      throw new Error('Generation is not completed')
 
+    // CODEX : Ici 'elders' compte les réussites sur CE circuit ; il ne désigne pas les vétérans de tous les tueurs.
     elders = this.sortStoreByPassed(track)
 
     running:
@@ -894,6 +902,7 @@ class Generation {
         this.minRunning = 0
       }
 
+      // CODEX : Réutiliser les survivants suffit si le garage atteint le quota ; sinon créer des descendants.
       if (stored.length >= total)
       {
         lists.dead    = []
@@ -914,7 +923,8 @@ class Generation {
 
     if (r.status != Generation.STATUS_TRAINING) {
       r.status = Generation.STATUS_RUNNING;
-      if (!lists.running.length)
+      // CODEX : Après reproduction, contrôler la nouvelle génération et non la liste vide du parent.
+      if (!r.lists.running.length)
         throw 'generation is empty'
     }
 
@@ -977,6 +987,7 @@ class Generation {
       demo.brain = trainee.brain
       this.status = Generation.STATUS_RUNNING
     }
+    // CODEX : fit() est asynchrone ; draw() suspend la physique jusqu'au callback onTrain.
     trainee.train(onTrain)
   }
 

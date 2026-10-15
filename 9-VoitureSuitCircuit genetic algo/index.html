@@ -1,35 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-
-    <link rel="stylesheet" href="style.css"/>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/p5.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/addons/p5.dom.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.1.0/dist/tf.min.js"></script>
-
-    <!--
-    <script src="../0-Librairies/p5.min.js"></script>
-    <script src="../0-Librairies/tf.min.js"></script>
-    -->
-    
-    <title>Voiture</title>
-  </head>
-  <body>
-    <script src="nn.js"></script>
-    <script src="ga.js"></script>
-    <script src="ray.js"></script>
-    <script src="boundary.js"></script>
-    <script src="track.js"></script>
-    <script src="vehicle.js"></script>
-    <script src="assets.js"></script>
-    <script src="ui.js"></script>
-    <script src="config.js"></script>
-    <script src="test.js"></script>
-    <script src="sketch/ui.js"></script>
-    <script src="sketch.js"></script>
-  </body>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Steering Lab — Bruno Vasselle · MichelUI</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/addons/p5.dom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.1.0/dist/tf.min.js"></script>
+</head>
+<body>
+  <div id="app"><p class="boot-message">Chargement du laboratoire…</p></div>
+  <noscript>Activez JavaScript pour lancer la simulation.</noscript>
+  <script src="nn.js"></script><script src="ga.js"></script>
+  <script src="ray.js"></script><script src="boundary.js"></script>
+  <script src="track.js"></script><script src="vehicle.js"></script>
+  <script src="assets.js"></script><script src="ui.js"></script>
+  <script src="config.js"></script><script src="test.js"></script>
+  <script src="scenarios.js"></script><script src="archives.js"></script>
+  <script src="controllers/EvaluationController.js"></script>
+  <script src="controllers/SessionController.js"></script>
+  <script src="settings-ui.js"></script><script src="sketch/ui.js"></script>
+  <script src="sketch.js"></script>
+  <script>
+    // CODEX : Un CDN indisponible doit produire une explication, même si p5 ne peut pas démarrer.
+    if (!window.p5 || !window.tf) document.getElementById('app').textContent =
+      'Bibliothèques indisponibles. Vérifiez votre connexion puis rechargez la page (p5.js / TensorFlow).';
+  </script>
+</body>
 </html>

@@ -73,6 +73,7 @@ class Track {
     let a0 = -PI/2
     let a1 = TWO_PI - PI / 2
 
+    // CODEX : Alterner le sens des circuits générés évite de n'entraîner qu'un sens de virage.
     let reverse = this.serial % 2
     if (reverse) {
       a0 = -a0
@@ -608,6 +609,7 @@ class Track {
       }
     return count;
   }
+  // CODEX : Une réussite est identifiée par géométrie (uuid) ET nombre de tours, pas par le nom d'affichage.
   get uuidLapped() {
     return `${this.uuid}.${this.laps}`
   }

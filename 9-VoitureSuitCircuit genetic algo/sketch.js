@@ -25,84 +25,26 @@ CONFIG.setup = () => {
   }
 }
 
-/** Circuit en cours      @type {Track}      */let currentTrack;
-/** Generation en cours   @type {Generation} */let currentGen;
-/** Validation sur tueurs @type {Test}       */let killerTest
-
-/**
-  Donnée sauvegardée
-*/
-function preload() {
-  let def = CONFIG.Sketch
-
-  let on_config = () => {
-    CONFIG.setup()
-
-    Asset.load(def.LOAD_TRACKS , world => Track.initials = world)
-    Asset.load(def.LOAD_KILLERS, world => Track.setKillers(world.tracks))
-    Asset.load(def.LOAD_GEN    , gen   => currentGen     = gen)
-    if (def.TRAINING) {
-      let training = def.TRAINING.split(":")
-      Asset.load(training[0], gen => Generation.prepareTraining(gen, training[1], training[2]))
-    }
-  }
-
-  if (def.LOAD_CONFIG) {
-    Asset.load(def.LOAD_CONFIG, on_config)
-  }
-  else
-    on_config()
-}
-
-let trainee
+// CODEX : Le canvas reste en coordonnées 1200 × 800 ; l'UI et les sessions sont indépendantes du steering.
+let currentTrack, currentGen, killerTest;
 function setup() {
-  let track
-
-  // tensor flow will work on the cpu
-  tf.setBackend('cpu');
-  let def = CONFIG.Sketch
-  if (def.ALWAYS_KILLER) {
-    let always  = def.ALWAYS_KILLER
-    let conf    = Track.config
-    alwaysKiller = [always[0], always[1], conf.TRICKY]
-    conf.TRICKY = always[0]
-  }
-
-  // On met l'interface en place
-  UI.setup()
-
-  killerTest = new Test()
-  killerTest.onNext = (next) => UI.testTable.html(killerTest.htmlInfo(next))
-  killerTest.onDone = UI.onTestDone
-
-  Test.onKillerClick = UI.onTestKillerClick
-  
-  // On crée les véhicules....
-  if (!currentGen)
-    currentGen = new Generation()
-
-  if (Generation.train) {
-    currentGen.prepareTraining()
-  }
-
-  // On crée un circuit...
-  nextTrack(true)
-  track = currentTrack
-
-  // On met les voitures sur la ligne de départ
-  currentGen.prepare(track)
-  UI.genStats(currentGen.stats);
-
-  killerTest.init(currentGen.lists.running)
-  UI.testTable.html(killerTest.htmlInfo(track))
-
-  UI.raceInfo()
-  // UI.brainInfo()
-  let {pause} = UI.status
-  if (pause) UI.pause(UI.lastMessage)
-  let comment = createDiv()
-  comment.class("Version")
-  comment.html("UI")
+  UI.setup(); CONFIG.setup();
+  Session = new SessionController();
+  Promise.resolve(tf.setBackend('cpu')).then(() => Session.init()).catch(e => UI.error(e));
+}
+function draw() {
+  background('#101b29');
+  if (!Session?.ready) return;
+  try {
+    if (UI.stepping) {
+      UI.paused = false; Session.tick(1); UI.paused = true; UI.stepping = false;
+    } else Session.tick(UI.status.cycles);
+    currentTrack.show();
+    const running = currentGen.lists.running;
+    const focus = car && running.includes(car) ? car : running.find(v => !v.dead && !v.finished);
+    currentGen.show(focus, car);
+  } catch (e) { UI.error(e); }
+  UI.render(); frameRate(UI.rate);
 }
 
 /** Démarre une nouvelle course sur un nouveau circuit.
@@ -133,102 +75,6 @@ function nextTrack(noprepare)
   }
 }
 
-function onRunningException(x)
-{
-  caught: {
-    if (x.message) {
-      if (x.type == UI) {
-        UI.message(x.message)
-        break caught
-      }
-      UI.pause(x.message)
-      if (x.type) {
-        if (window[x.type]) {
-          window[x.type](x)
-          break caught
-        }
-        if (UI[x.type]) {
-          UI[x.type](x)
-          break caught
-        }
-      }
-    }
-    else {
-      UI.pause(`unknown '${x}'`)
-    }
-    console.log(x)
-    throw x
-  }
-}
-
-// Appelée 60 fois / seconde (mais voir frameRate)
-function draw() {
-  let vehicle
-  let {cycles,step, rate} = UI.status
-
-  background(0);
-
-  running: {
-    // On dessine le circuit
-    currentTrack.show()
-
-    // On simule quelques cycles de physique, et on récupère la voiture
-    // la plus intéressante.
-    try 
-    {
-      if (currentGen.status == Generation.STATUS_TRAINING) {
-        let info = Generation.train.trainee.brain.trainInfo
-        rate = 1
-        throw { 
-          type: UI, 
-          message: `Training[${info.duration}] ` + 
-          `${info.epoch}/`.padStart(5) + info.epochs +
-          ' loss ' + `${round(info.loss*1000,3)}`.padEnd(10) 
-        }
-      }
-
-      vehicle = currentGen.run(cycles);
-      
-      // On répartit les voitures selon leur état (en course, dans le décor, ...)
-      currentGen.classifyRunning();
-
-      // Si jamais on a plus de voitures en course, on passe à la course suivante (
-      // génération suivante, circuit suivant ou autre selon la logique mise en
-      // place dans 'nextRace')
-      // MB: ça me semble inutile, car on a déjà un test pour passer à la génération suivante
-      if (currentGen.countRunning == 0 && currentGen.started) {
-        nextRace()
-      }
-    }
-    catch (x) { onRunningException(x) }
-
-    // On dessine le circuit
-    currentTrack.show()
-    // On dessine les voitures
-    currentGen.show(vehicle, Vehicle.config.OF_INTEREST)
-
-    // On montre le tableau de course de temps à autre
-    if (vehicle && vehicle.event) { 
-      vehicle.event = null
-      UI.raceInfo()
-      // if (currentGen.active == 0) finishRunning()
-    }
-  } // Fin du bloc 'running'
-
-  UI.info(cycles, vehicle);
-
-  // Le bouton 'Step', si enclenché, demande de mettre sur
-  // pause après le premier appel à 'draw'. On réalise la pause
-  // en mettant 'speed' à 0
-  if (step) {
-    UI.stepButton.value('')
-    UI.speedSlider.value(0)
-    if (UI.onStep) UI.onStep()
-  }
-
-  frameRate(rate)
-}
-
 /** Qualifie le circuit en cours de tueur
  * - s'il l'est déjà, rien ne passe
  * - sinon :
@@ -248,6 +94,7 @@ function declareKiller()
     let kill = `${currentTrack.kills}-t${currentTrack.serial - Track.offset}`
     let savedGen   = `k${kill}.gen`;
     let savedTrack = `k${kill}.trk`;
+    // CODEX : Un nouveau tueur crée deux archives : voitures mortes et géométrie du circuit.
     saveGeneration(savedGen, ['dead']);
     saveTrack(savedTrack)
 
@@ -262,13 +109,12 @@ function declareKiller()
       if (currentGen.countQualifiedOrElders >= TOTAL) { no = ''; break no }
     }
 
-    UI.message(`Not enough elders (elders=${currentGen.countElders} qualified=${currentGen.countQualifiedOrElders} auto=${AUTO_TEST}).` +
-      ` Entering test`, true)
+    UI.message('Qualification automatique : le quota de voitures validées est insuffisant.', true)
     test = UI.testCheck
     test.checked(true)
     test.value('auto')
   }
-  if (no) UI.message(`Killer: skipping auto test because of ${no}`)
+  if (no) UI.message('Circuit difficile archivé. Qualification automatique non déclenchée.')
 }
 
 function mayPurge()
@@ -317,7 +163,7 @@ function nextRace()
 
     if (purge && Generation.train)
     {
-      log.warn(`disabling purge as training is ongoing`)
+      console.warn(`disabling purge as training is ongoing`)
       UI.purgeCheck.checked(false)
       purge = false
     }
@@ -345,6 +191,7 @@ function nextRace()
       }
     }
     // Sauf contre-indication, on ne change de circuit que si toutes voitures ont terminé
+    // CODEX : FINISHED=true garde le même circuit jusqu'au quota de réussites ; les places manquantes sont mutées.
     if (stored >= currentGen.total || FROZEN || !FINISHED)     {
       // if (!purge || test) // ce test ne fonctionne pas si purge et stored == total
         nextTrack(true);

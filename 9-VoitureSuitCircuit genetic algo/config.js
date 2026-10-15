@@ -1,3 +1,4 @@
+// CODEX : MichelUI prépare les scénarios depuis scenarios.js ; Sketch.LOAD_* reste la configuration historique.
 /**
  * Configuration
  * 
@@ -106,6 +107,8 @@ CONFIG = new Asset(CONFIG)
     // def.LOAD_CONFIG = 'config/miage-0'
     // def.LOAD_CONFIG = 'config/training'
 
+    // CODEX : Le démarrage actif charge deux voitures déjà entraînées ; ce n'est pas un départ aléatoire.
+    // CODEX : Pour apprendre depuis zéro, utiliser 'seed-c' seul (total: 30), ou LOAD_GEN = null.
     def.LOAD_GEN = [
         'car-simple-1',
         // 'gen-h9x6c1-2',
@@ -127,6 +130,8 @@ CONFIG = new Asset(CONFIG)
         //  'initialTracks',
     ]
 
+    // CODEX : Mode supervisé : fichier élève:nom élève:nom maître (maître dans LOAD_GEN).
+    // CODEX : Exemple avec les assets présents : 'seed-c::h9c-f1.5'. Voir ANALYSE.md.
     // def.TRAINING = 'seed-c::f1.5'
     // def.ALWAYS_KILLER = [ 1.5, 0.5 ]
 
@@ -152,6 +157,7 @@ CONFIG.Vehicle = function () {
 CONFIG.Track = function () {
     let def = Track.config;
 
+    // CODEX : Seul 6.5 est affecté ici ; le 3 après le point-virgule est une expression sans effet.
     def.TRICKY = 6.5; 3;
     def.LAPS = 2;
     def.LENGTH = 240
@@ -164,6 +170,8 @@ CONFIG.Track = function () {
 CONFIG.Generation = function() {
     let def = Generation.config
 
+    // CODEX : TOTAL est une valeur par défaut ; un JSON chargé peut imposer un autre total.
+    // CODEX : car-simple-1 n'a pas de total : ses deux voitures donnent initialement total = 2.
     def.TOTAL = 30; 1;
     def.BROOM = 'broom' // On tue systématiquement les voitures plus lentes que celle-ci
 
@@ -178,6 +186,7 @@ CONFIG.Test = function() {
     let def = Test.config
 
     def.MIN_ELDERS = 15
+    // CODEX : 10 limite le test partiel si MIN_ELDERS est atteint ; 0 après ';' ne change rien.
     def.MAX_TRACKS = 10; 0;
     def.FULL = true
 
