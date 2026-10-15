@@ -59,3 +59,19 @@ Les nouveaux commentaires commencent par `// CODEX :`. La configuration de scén
 - La vérification complète de la réimportation par le sélecteur de fichiers et les parcours prolongés de qualification/balai restent à effectuer. Le connecteur de navigateur est devenu indisponible pendant la vérification finale ; le fichier exporté a pu être inspecté directement.
 
 Ces vérifications portent sur une première version fonctionnelle, pas sur tous les critères de la spécification ni sur tous les navigateurs.
+
+## Inspection pédagogique du cerveau
+
+L'onglet Voiture présente maintenant le flux **capteurs → couches cachées → sorties**. Le bouton **Explorer le réseau et son calcul** ouvre un schéma de neurones sélectionnables, avec les connexions pondérées, les valeurs d'activation et le détail du calcul d'un neurone : somme des produits plus biais, puis ReLU/sigmoïde/tanh.
+
+Les entrées sont nommées (proximité des murs, sens des murs et canaux optionnels), et les sorties sont reliées à l'angle et à la vitesse souhaités. Pour les voitures symétrisées, le schéma montre la branche originale et l'explication distingue la combinaison finale avec le miroir.
+
+L'exploration suspend la physique, rejoue uniquement le réseau sur ses dernières entrées mémorisées et libère les tenseurs temporaires. Ce recalcul utilise les poids actuels ; il ne reconstitue pas une ancienne commande après un apprentissage qui a changé les poids. Aucun capteur, déplacement ou force n'est recalculé. Sans observation, les valeurs restent « — » ; faire Un pas avant d'explorer pour obtenir un exemple numérique.
+
+La vue matricielle historique reste dans un volet **Vue technique** avec légende : poids/biais signés, normalisation des couleurs par bloc, bandes d'activations centrées sur 0,5 et dimensions W/b de chaque couche. Les couleurs de poids et d'activations n'ont pas la même échelle. Le schéma pédagogique limite le dessin à 12 neurones par couche pour les grands réseaux, mais le calcul inclut toutes les connexions.
+
+### Codes des capteurs et apprentissage de la vitesse
+
+L'onglet Voiture contient désormais une explication visible des angles relatifs, de la proximité normalisée et des codes de sens des murs : 1 pour le repère à gauche du rayon, 0 à droite, 0,5 sans intersection. L'option de sens pondéré possède une explication adaptée. Ces codes ne sont ni des commandes de virage, ni une preuve de bon sens de circulation.
+
+Le volet « Apprend-elle à accélérer et à freiner ? » décrit la fonction de mérite réellement utilisée, affiche le poids de vitesse configuré et distingue évolution, imitation et observation à poids fixes. Il explique la possibilité d'un ralentissement appris, l'absence de récompense dédiée au freinage anticipé et l'absence de vitesse actuelle dans les entrées des cerveaux fournis. La dernière vitesse souhaitée et la vitesse réelle à l'état affiché sont accessibles dans les détails de la voiture ; ce sont des indicateurs d'observation, pas une preuve d'anticipation en virage.

@@ -995,3 +995,47 @@ input:disabled,select:disabled {
   padding:6px 9px;
   font-size:11px
 }
+
+/* CODEX : La vue pédagogique est indépendante du dessin matriciel et du canvas physique. */
+.brain-teaching { margin: 22px 0; border-top: 1px solid var(--line); padding-top: 4px; }
+.brain-teaching p, .matrix-legend { font-size: 12px; line-height: 1.7; }
+.brain-flow { display: flex; align-items: center; justify-content: space-between; gap: 5px; overflow-x: auto; padding: 10px 0 18px; }
+.brain-flow span { text-align: center; min-width: 52px; }
+.brain-flow strong { display: block; color: var(--mint); font-size: 22px; }
+.brain-flow small { display: block; font-size: 10px; }
+.brain-flow b { color: var(--muted); font-weight: normal; }
+#brain-explore { width: 100%; font-size: 12px; margin-bottom: 12px; }
+#brain-matrix-details summary { font-size: 12px; color: var(--mint); line-height: 1.6; }
+.matrix-legend { padding-left: 18px; color: var(--muted); }
+.matrix-legend li { margin-bottom: 8px; }
+.weight-positive { color: #8dcdf8; }
+.weight-negative { color: #eea09b; }
+.brain-dialog { width: min(1240px, calc(100% - 24px)); }
+.brain-dialog .dialog-body { max-height: 70vh; }
+.brain-dialog p { font-size: 13px; }
+.network-scroll { overflow-x: auto; background: #0e1722; border: 1px solid var(--line); border-radius: 12px; margin: 18px 0; }
+.network-scroll svg { display: block; margin: auto; }
+.network-heading { font-size: 13px; font-weight: 600; fill: var(--mint); }
+.network-label { font-size: 11px; fill: var(--muted); }
+.network-value { font-size: 10px; fill: var(--text); font-variant-numeric: tabular-nums; pointer-events: none; }
+.network-neuron { fill: #1b2a3b; stroke: #607d96; stroke-width: 1.5; }
+.network-neuron.selected { stroke: var(--mint); stroke-width: 3; fill: #294f45; }
+.network-scroll [role=button] { cursor: pointer; }
+.network-scroll [role=button]:hover circle, .network-scroll [role=button]:focus circle { stroke: var(--amber); stroke-width: 3; }
+.neuron-calculation { border: 1px solid var(--line); border-radius: 12px; background: var(--raised); padding: 20px; }
+.neuron-calculation h3 { margin-top: 0; }
+.formula { font-family: ui-monospace, monospace; padding: 12px; border-radius: 8px; background: #0b1823; overflow-x: auto; }
+.brain-explanations { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.sensor-help { display: block; font-size: 11px; max-width: 360px; }
+.brain-explanations td, .neuron-calculation td { font-variant-numeric: tabular-nums; }
+.brain-explanations td:first-child { max-width: none; }
+@media(max-width:700px) { .brain-explanations { grid-template-columns: 1fr; gap: 6px; } .brain-dialog .dialog-head h2 { font-size: 19px; } }
+
+/* CODEX : Les codes d'entrée sont expliqués dans le panneau, pas uniquement dans des tooltips. */
+.input-guide { border: 1px solid var(--line); background: #162634; border-radius: 10px; padding: 14px; margin: 12px 0 18px; }
+.input-guide h4, #brain-driving-explanation h4 { font-size: 13px; margin: 12px 0 8px; }
+.input-guide h4:first-child { margin-top: 0; }
+.input-code-table td:first-child { color: var(--mint); font-weight: 600; width: 42px; }
+#brain-driving-guide, .driving-lesson { margin: 16px 0; font-size: 12px; line-height: 1.7; }
+#brain-driving-guide summary, .driving-lesson summary { color: var(--mint); cursor: pointer; }
+#brain-driving-explanation .notice { margin: 12px 0; }
